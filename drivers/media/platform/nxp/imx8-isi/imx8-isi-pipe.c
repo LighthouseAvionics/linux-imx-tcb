@@ -326,6 +326,8 @@ int mxc_isi_pipe_enable(struct mxc_isi_pipe *pipe)
 	u32 input;
 	int ret;
 
+	dev_info(pipe->isi->dev, "ISI-PIPE: pipe_enable BEGIN, pipe=%d\n", pipe->id);
+
 	/*
 	 * Find the connected input by inspecting the crossbar switch routing
 	 * table.
@@ -336,8 +338,14 @@ int mxc_isi_pipe_enable(struct mxc_isi_pipe *pipe)
 						    0, &input, NULL);
 	v4l2_subdev_unlock_state(state);
 
-	if (ret)
+	if (ret) {
+		dev_err(pipe->isi->dev, "ISI-PIPE: routing_find_opposite_end FAILED, no route to pipe %d\n",
+			pipe->id);
 		return -EPIPE;
+	}
+
+	dev_info(pipe->isi->dev, "ISI-PIPE: Found route from crossbar input=%u to pipe=%d\n",
+		 input, pipe->id);
 
 	/* Configure the pipeline. */
 	state = v4l2_subdev_lock_and_get_active_state(sd);
@@ -360,25 +368,36 @@ int mxc_isi_pipe_enable(struct mxc_isi_pipe *pipe)
 	v4l2_subdev_unlock_state(state);
 
 	ret = mxc_isi_get_vc(pipe);
-	if (ret)
+	if (ret) {
+		dev_err(pipe->isi->dev, "ISI-PIPE: get_vc FAILED ret=%d\n", ret);
 		return ret;
+	}
+
+	dev_info(pipe->isi->dev, "ISI-PIPE: vc=%d, sink %ux%u, compose %ux%u, crop %ux%u\n",
+		 pipe->vc, in_size.width, in_size.height,
+		 scale.width, scale.height, crop.width, crop.height);
 
 	/* Configure the ISI channel. */
+	dev_info(pipe->isi->dev, "ISI-PIPE: Configuring channel, input=%u\n", input);
 	mxc_isi_channel_config(pipe, input, &in_size, &scale, &crop,
 			       sink_info->encoding, src_info->encoding);
 
+	dev_info(pipe->isi->dev, "ISI-PIPE: Enabling channel\n");
 	mxc_isi_channel_enable(pipe);
 
 	/* Enable streams on the crossbar switch. */
+	dev_info(pipe->isi->dev, "ISI-PIPE: Enabling crossbar streams, pad=%u\n",
+		 xbar->num_sinks + pipe->id);
 	ret = v4l2_subdev_enable_streams(&xbar->sd, xbar->num_sinks + pipe->id,
 					 BIT(0));
 	if (ret) {
 		mxc_isi_channel_disable(pipe);
-		dev_err(pipe->isi->dev, "Failed to enable pipe %u\n",
-			pipe->id);
+		dev_err(pipe->isi->dev, "ISI-PIPE: enable_streams FAILED for pipe %u, ret=%d\n",
+			pipe->id, ret);
 		return ret;
 	}
 
+	dev_info(pipe->isi->dev, "ISI-PIPE: pipe_enable SUCCESS\n");
 	return 0;
 }
 

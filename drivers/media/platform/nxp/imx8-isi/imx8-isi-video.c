@@ -1034,7 +1034,11 @@ static int mxc_isi_vb2_start_streaming(struct vb2_queue *q, unsigned int count)
 	unsigned int i;
 	int ret;
 
+	dev_info(video->pipe->isi->dev, "ISI-VIDEO: start_streaming BEGIN, count=%u, pipe=%d\n",
+		 count, video->pipe->id);
+
 	/* Initialize the ISI channel. */
+	dev_info(video->pipe->isi->dev, "ISI-VIDEO: init_channel\n");
 	mxc_isi_video_init_channel(video);
 
 	spin_lock_irq(&video->buf_lock);
@@ -1047,6 +1051,7 @@ static int mxc_isi_vb2_start_streaming(struct vb2_queue *q, unsigned int count)
 	}
 
 	/* Queue the first buffers. */
+	dev_info(video->pipe->isi->dev, "ISI-VIDEO: queue_first_buffers\n");
 	mxc_isi_video_queue_first_buffers(video);
 
 	/* Clear frame count */
@@ -1054,10 +1059,14 @@ static int mxc_isi_vb2_start_streaming(struct vb2_queue *q, unsigned int count)
 
 	spin_unlock_irq(&video->buf_lock);
 
+	dev_info(video->pipe->isi->dev, "ISI-VIDEO: calling pipe_enable\n");
 	ret = mxc_isi_pipe_enable(video->pipe);
-	if (ret)
+	if (ret) {
+		dev_err(video->pipe->isi->dev, "ISI-VIDEO: pipe_enable FAILED ret=%d\n", ret);
 		goto error;
+	}
 
+	dev_info(video->pipe->isi->dev, "ISI-VIDEO: start_streaming SUCCESS\n");
 	return 0;
 
 error:

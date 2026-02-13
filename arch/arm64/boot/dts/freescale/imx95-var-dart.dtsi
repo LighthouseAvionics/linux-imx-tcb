@@ -117,33 +117,33 @@
 		};
 	};
 
-	sound-wm8904 {
-		compatible = "simple-audio-card";
-		simple-audio-card,bitclock-master = <&dailink_master>;
-		simple-audio-card,format = "i2s";
-		simple-audio-card,frame-master = <&dailink_master>;
-		simple-audio-card,name = "wm8904-audio";
-		simple-audio-card,routing =
-			"Headphone Jack", "HPOUTL",
-			"Headphone Jack", "HPOUTR",
-			"IN2L", "Line In Jack",
-			"IN2R", "Line In Jack",
-			"IN1L", "Microphone Jack",
-			"IN1R", "Microphone Jack";
-		simple-audio-card,widgets =
-			"Microphone", "Microphone Jack",
-			"Headphone", "Headphone Jack",
-			"Line", "Line In Jack";
-		simple-audio-card,mclk-fs = <256>;
+	// sound-wm8904 {
+	// 	compatible = "simple-audio-card";
+	// 	simple-audio-card,bitclock-master = <&dailink_master>;
+	// 	simple-audio-card,format = "i2s";
+	// 	simple-audio-card,frame-master = <&dailink_master>;
+	// 	simple-audio-card,name = "wm8904-audio";
+	// 	simple-audio-card,routing =
+	// 		"Headphone Jack", "HPOUTL",
+	// 		"Headphone Jack", "HPOUTR",
+	// 		"IN2L", "Line In Jack",
+	// 		"IN2R", "Line In Jack",
+	// 		"IN1L", "Microphone Jack",
+	// 		"IN1R", "Microphone Jack";
+	// 	simple-audio-card,widgets =
+	// 		"Microphone", "Microphone Jack",
+	// 		"Headphone", "Headphone Jack",
+	// 		"Line", "Line In Jack";
+	// 	simple-audio-card,mclk-fs = <256>;
 
-		dailink_master: simple-audio-card,codec {
-			sound-dai = <&wm8904>;
-		};
+	// 	dailink_master: simple-audio-card,codec {
+	// 		sound-dai = <&wm8904>;
+	// 	};
 
-		simple-audio-card,cpu {
-			sound-dai = <&sai3>;
-		};
-	};
+	// 	simple-audio-card,cpu {
+	// 		sound-dai = <&sai3>;
+	// 	};
+	// };
 
 	usdhc3_pwrseq: usdhc3_pwrseq {
 		compatible = "mmc-pwrseq-simple";

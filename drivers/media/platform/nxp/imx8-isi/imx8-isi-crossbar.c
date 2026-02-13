@@ -462,11 +462,19 @@ static int mxc_isi_crossbar_enable_streams(struct v4l2_subdev *sd,
 	u8 stream_index;
 	int ret;
 
+	dev_info(xbar->isi->dev, "ISI-XBAR: enable_streams BEGIN, pad=%u, streams_mask=0x%llx\n",
+		 pad, streams_mask);
+
 	remote_sd = mxc_isi_crossbar_xlate_streams(xbar, state, pad, streams_mask,
 						   &sink_pad, &sink_streams,
 						   &remote_pad);
-	if (IS_ERR(remote_sd))
+	if (IS_ERR(remote_sd)) {
+		dev_err(xbar->isi->dev, "ISI-XBAR: xlate_streams FAILED\n");
 		return PTR_ERR(remote_sd);
+	}
+
+	dev_info(xbar->isi->dev, "ISI-XBAR: remote_sd=%s, sink_pad=%u, sink_streams=0x%llx, remote_pad=%u\n",
+		 remote_sd->name, sink_pad, sink_streams, remote_pad);
 
 	input = &xbar->inputs[sink_pad];
 
@@ -475,10 +483,13 @@ static int mxc_isi_crossbar_enable_streams(struct v4l2_subdev *sd,
 	 * streams.
 	 */
 	if (!input->enabled_streams) {
+		dev_info(xbar->isi->dev, "ISI-XBAR: First stream, enabling gasket\n");
 		ret = mxc_isi_crossbar_gasket_enable(xbar, state, remote_sd,
 						     remote_pad, sink_pad);
-		if (ret)
+		if (ret) {
+			dev_err(xbar->isi->dev, "ISI-XBAR: gasket_enable FAILED ret=%d\n", ret);
 			return ret;
+		}
 	}
 
 	stream_index = clamp_t(u8, ffs(sink_streams), 1, xbar->num_sources);
@@ -488,12 +499,15 @@ static int mxc_isi_crossbar_enable_streams(struct v4l2_subdev *sd,
 	 * directly to support ISI stream duplicated feature
 	 */
 	if (input->enabled_streams & sink_streams) {
+		dev_info(xbar->isi->dev, "ISI-XBAR: Stream already enabled, incrementing count\n");
 		input->enabled_count[(stream_index - 1)]++;
 		return 0;
 	}
 
+	dev_info(xbar->isi->dev, "ISI-XBAR: Enabling remote subdev streams\n");
 	ret = v4l2_subdev_enable_streams(remote_sd, remote_pad, sink_streams);
 	if (ret < 0) {
+		dev_err(xbar->isi->dev, "ISI-XBAR: v4l2_subdev_enable_streams FAILED ret=%d\n", ret);
 		if (!input->enabled_streams)
 			mxc_isi_crossbar_gasket_disable(xbar, sink_pad);
 		return ret;
@@ -502,6 +516,8 @@ static int mxc_isi_crossbar_enable_streams(struct v4l2_subdev *sd,
 	input->enabled_streams |= sink_streams;
 	input->enabled_count[(stream_index - 1)]++;
 
+	dev_info(xbar->isi->dev, "ISI-XBAR: enable_streams SUCCESS, enabled_streams=0x%llx\n",
+		 input->enabled_streams);
 	return 0;
 }
 

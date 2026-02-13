@@ -6,6 +6,7 @@
 
 #include <linux/bits.h>
 #include <linux/clk.h>
+#include <linux/debugfs.h>
 #include <linux/errno.h>
 #include <linux/iopoll.h>
 #include <linux/kernel.h>
@@ -367,6 +368,9 @@ struct dwc_csi_device {
 		PATTERN_VERTICAL,
 		PATTERN_HORIZONTAL,
 	} pg_pattern;
+
+	/* Debugfs */
+	struct dentry *debugfs_dir;
 };
 
 /* List of supported pixel formats for the subdev */
@@ -1102,21 +1106,49 @@ static int dwc_csi_start_stream(struct dwc_csi_device *csidev)
 {
 	int ret;
 
+	dev_info(csidev->dev, "DWC-CSI: start_stream BEGIN\n");
+
+	dev_info(csidev->dev, "DWC-CSI: calling device_startup\n");
 	dwc_csi_device_startup(csidev);
 
+	dev_info(csidev->dev, "DWC-CSI: calling device_init\n");
 	ret = dwc_csi_device_init(csidev);
-	if (ret)
+	if (ret) {
+		dev_err(csidev->dev, "DWC-CSI: device_init FAILED ret=%d\n", ret);
 		return ret;
+	}
 
+	dev_info(csidev->dev, "DWC-CSI: calling ipi_config\n");
 	dwc_csi_device_ipi_config(csidev);
 
+	dev_info(csidev->dev, "DWC-CSI: calling pg_enable\n");
 	ret = dwc_csi_device_pg_enable(csidev);
-	if (ret)
+	if (ret) {
+		dev_err(csidev->dev, "DWC-CSI: pg_enable FAILED ret=%d\n", ret);
 		return ret;
+	}
 
+	dev_info(csidev->dev, "DWC-CSI: calling hs_rx_start\n");
 	dwc_csi_device_hs_rx_start(csidev);
 
+	dev_info(csidev->dev, "DWC-CSI: enabling interrupts\n");
 	dwc_csi_device_enable_interrupts(csidev, true);
+
+	dev_info(csidev->dev, "DWC-CSI: start_stream SUCCESS\n");
+
+	/* Read and print DPHY status for debugging */
+	{
+		u32 dphy_status = dwc_csi_read(csidev, CSI2RX_DPHY_RX_STATUS);
+		dev_info(csidev->dev, "DPHY_RX_STATUS = 0x%08X\n", dphy_status);
+		dev_info(csidev->dev, "  CLK_LANE_HS: %s\n",
+			 (dphy_status & CSI2RX_DPHY_RX_STATUS_CLK_LANE_HS) ? "YES" : "NO");
+		dev_info(csidev->dev, "  CLK_LANE_ULP: %s\n",
+			 (dphy_status & CSI2RX_DPHY_RX_STATUS_CLK_LANE_ULP) ? "YES" : "NO");
+		dev_info(csidev->dev, "  DATA_LANE0_ULP: %s\n",
+			 (dphy_status & CSI2RX_DPHY_RX_STATUS_DATA_LANE0_ULP) ? "YES" : "NO");
+		dev_info(csidev->dev, "  DATA_LANE1_ULP: %s\n",
+			 (dphy_status & CSI2RX_DPHY_RX_STATUS_DATA_LANE1_ULP) ? "YES" : "NO");
+	}
 
 	return 0;
 }
@@ -1137,25 +1169,38 @@ static int dwc_csi_enable_streams(struct v4l2_subdev *sd,
 	u64 sink_streams;
 	int ret;
 
+	dev_info(csidev->dev, "DWC-CSI: enable_streams BEGIN, pad=%u, streams_mask=0x%llx\n",
+		 pad, streams_mask);
+
 	if (!csidev->source_sd) {
-		dev_err(csidev->dev, "Sensor don't link with CSIS pad\n");
+		dev_err(csidev->dev, "DWC-CSI: Sensor not linked with CSIS pad\n");
 		return -EPIPE;
 	}
 
+	dev_info(csidev->dev, "DWC-CSI: source_sd=%s, enabled_streams=0x%llx\n",
+		 csidev->source_sd->name, csidev->enabled_streams);
+
 	if (!csidev->enabled_streams) {
+		dev_info(csidev->dev, "DWC-CSI: First stream, starting CSI hardware\n");
 		ret = pm_runtime_resume_and_get(csidev->dev);
-		if (ret < 0)
+		if (ret < 0) {
+			dev_err(csidev->dev, "DWC-CSI: pm_runtime_resume FAILED ret=%d\n", ret);
 			return ret;
+		}
 
 		ret = v4l2_ctrl_handler_setup(&csidev->ctrl_handler);
-		if (ret < 0)
+		if (ret < 0) {
+			dev_err(csidev->dev, "DWC-CSI: ctrl_handler_setup FAILED ret=%d\n", ret);
 			goto err_runtime_put;
+		}
 
 		dwc_csi_clear_counters(csidev);
 
 		ret = dwc_csi_start_stream(csidev);
-		if (ret < 0)
+		if (ret < 0) {
+			dev_err(csidev->dev, "DWC-CSI: start_stream FAILED ret=%d\n", ret);
 			goto err_runtime_put;
+		}
 
 		dwc_csi_dump_regs(csidev);
 		dwc_csi_log_counters(csidev);
@@ -1165,15 +1210,19 @@ static int dwc_csi_enable_streams(struct v4l2_subdev *sd,
 						       DWC_CSI2RX_PAD_SINK,
 						       &streams_mask);
 
-	dev_dbg(csidev->dev, "remote sd: %s pad: %u, sink_stream:0x%llx\n",
+	dev_info(csidev->dev, "DWC-CSI: Enabling source subdev streams, remote_sd=%s, remote_pad=%u, sink_streams=0x%llx\n",
 		csidev->source_sd->name, csidev->remote_pad, sink_streams);
 
 	ret = v4l2_subdev_enable_streams(csidev->source_sd, csidev->remote_pad,
 					 sink_streams);
-	if (ret)
+	if (ret) {
+		dev_err(csidev->dev, "DWC-CSI: v4l2_subdev_enable_streams FAILED ret=%d\n", ret);
 		return ret;
+	}
 
 	csidev->enabled_streams |= streams_mask;
+	dev_info(csidev->dev, "DWC-CSI: enable_streams SUCCESS, enabled_streams=0x%llx\n",
+		 csidev->enabled_streams);
 
 	return 0;
 
@@ -1584,6 +1633,50 @@ static int dwc_csi_subdev_init(struct dwc_csi_device *csidev)
 	return ret;
 }
 
+/* Debugfs interface */
+static int dwc_csi_debugfs_status_show(struct seq_file *s, void *data)
+{
+	struct dwc_csi_device *csidev = s->private;
+	u32 dphy_status, int_status, version, n_lanes;
+
+	dphy_status = dwc_csi_read(csidev, CSI2RX_DPHY_RX_STATUS);
+	int_status = dwc_csi_read(csidev, CSI2RX_INT_ST_MAIN);
+	version = dwc_csi_read(csidev, 0x00);  /* VERSION register */
+	n_lanes = dwc_csi_read(csidev, 0x04);  /* N_LANES register */
+
+	seq_puts(s, "DWC MIPI CSI-2 Status\n");
+	seq_puts(s, "=====================\n\n");
+
+	seq_printf(s, "VERSION (0x00) = 0x%08X\n", version);
+	seq_printf(s, "N_LANES (0x04) = 0x%08X (%u lanes configured)\n", n_lanes, n_lanes);
+	seq_puts(s, "\n");
+
+	seq_printf(s, "DPHY_RX_STATUS (0x48) = 0x%08X\n", dphy_status);
+	seq_printf(s, "  CLK_LANE_HS:     %s%s\n",
+		   (dphy_status & CSI2RX_DPHY_RX_STATUS_CLK_LANE_HS) ? "YES" : "NO",
+		   (dphy_status & CSI2RX_DPHY_RX_STATUS_CLK_LANE_HS) ? " ← CLOCK ACTIVE!" : " ← NO CLOCK!");
+	seq_printf(s, "  CLK_LANE_ULP:    %s\n",
+		   (dphy_status & CSI2RX_DPHY_RX_STATUS_CLK_LANE_ULP) ? "YES" : "NO");
+	seq_printf(s, "  DATA_LANE0_ULP:  %s\n",
+		   (dphy_status & CSI2RX_DPHY_RX_STATUS_DATA_LANE0_ULP) ? "YES" : "NO");
+	seq_printf(s, "  DATA_LANE1_ULP:  %s\n",
+		   (dphy_status & CSI2RX_DPHY_RX_STATUS_DATA_LANE1_ULP) ? "YES" : "NO");
+	seq_puts(s, "\n");
+
+	seq_printf(s, "INT_ST_MAIN (0x100) = 0x%08X\n", int_status);
+	if (int_status) {
+		if (int_status & CSI2RX_INT_ST_MAIN_ERR_PHY)
+			seq_puts(s, "  ERROR: PHY error detected!\n");
+		if (int_status & CSI2RX_INT_ST_MAIN_ERR_ECC)
+			seq_puts(s, "  ERROR: ECC error!\n");
+	}
+	seq_puts(s, "\n");
+
+	return 0;
+}
+
+DEFINE_SHOW_ATTRIBUTE(dwc_csi_debugfs_status);
+
 static int dwc_csi_device_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -1655,6 +1748,13 @@ static int dwc_csi_device_probe(struct platform_device *pdev)
 
 	pm_runtime_enable(dev);
 
+	/* Create debugfs */
+	csidev->debugfs_dir = debugfs_create_dir(dev_name(dev), NULL);
+	if (!IS_ERR(csidev->debugfs_dir)) {
+		debugfs_create_file("status", 0444, csidev->debugfs_dir,
+				    csidev, &dwc_csi_debugfs_status_fops);
+	}
+
 	return 0;
 
 err_ctl_cleanup:
@@ -1670,6 +1770,8 @@ static void dwc_csi_device_remove(struct platform_device *pdev)
 {
 	struct v4l2_subdev *sd = platform_get_drvdata(pdev);
 	struct dwc_csi_device *csidev = sd_to_dwc_csi_device(sd);
+
+	debugfs_remove_recursive(csidev->debugfs_dir);
 
 	dwc_csi_controls_cleanup(csidev);
 
