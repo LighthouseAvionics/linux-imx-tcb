@@ -29,6 +29,7 @@ static inline void mxc_isi_write(struct mxc_isi_pipe *pipe, u32 reg, u32 val)
 
 void mxc_isi_channel_set_inbuf(struct mxc_isi_pipe *pipe, dma_addr_t dma_addr)
 {
+	dev_dbg(pipe->isi->dev, "mxc_isi_channel_set_inbuf: ENTER dma_addr=0x%pad\n", &dma_addr);
 	mxc_isi_write(pipe, CHNL_IN_BUF_ADDR, lower_32_bits(dma_addr));
 	if (pipe->isi->pdata->has_36bit_dma)
 		mxc_isi_write(pipe, CHNL_IN_BUF_XTND_ADDR,
@@ -40,6 +41,8 @@ void mxc_isi_channel_set_outbuf(struct mxc_isi_pipe *pipe,
 				enum mxc_isi_buf_id buf_id)
 {
 	int val;
+
+	dev_dbg(pipe->isi->dev, "mxc_isi_channel_set_outbuf: ENTER buf_id=%d\n", buf_id);
 
 	val = mxc_isi_read(pipe, CHNL_OUT_BUF_CTRL);
 
@@ -84,6 +87,7 @@ void mxc_isi_channel_set_max_size(struct mxc_isi_pipe *pipe,
 				  const struct v4l2_pix_format_mplane *pix,
 				  const bool buf_max_size)
 {
+	dev_dbg(pipe->isi->dev, "mxc_isi_channel_set_max_size: ENTER buf_max_size=%d\n", buf_max_size);
 	if (!buf_max_size)
 		return;
 
@@ -95,6 +99,8 @@ void mxc_isi_channel_set_max_size(struct mxc_isi_pipe *pipe,
 void mxc_isi_channel_m2m_start(struct mxc_isi_pipe *pipe)
 {
 	u32 val;
+
+	dev_dbg(pipe->isi->dev, "mxc_isi_channel_m2m_start: ENTER\n");
 
 	val = mxc_isi_read(pipe, CHNL_MEM_RD_CTRL);
 	val &= ~CHNL_MEM_RD_CTRL_READ_MEM;
@@ -143,7 +149,7 @@ static void mxc_isi_channel_set_scaling(struct mxc_isi_pipe *pipe,
 	u32 decx, decy;
 	u32 val;
 
-	dev_dbg(pipe->isi->dev, "input %ux%u, output %ux%u\n",
+	dev_dbg(pipe->isi->dev, "mxc_isi_channel_set_scaling: ENTER input %ux%u, output %ux%u\n",
 		in_size->width, in_size->height,
 		out_size->width, out_size->height);
 
@@ -189,6 +195,8 @@ static void mxc_isi_channel_set_crop(struct mxc_isi_pipe *pipe,
 				     const struct v4l2_rect *dst)
 {
 	u32 val, val0, val1;
+
+	dev_dbg(pipe->isi->dev, "mxc_isi_channel_set_crop: ENTER\n");
 
 	val = mxc_isi_read(pipe, CHNL_IMG_CTRL);
 	val &= ~CHNL_IMG_CTRL_CROP_EN;
@@ -236,6 +244,8 @@ static void mxc_isi_channel_set_csc(struct mxc_isi_pipe *pipe,
 	const u32 *coeffs = NULL;
 	u32 val;
 
+	dev_dbg(pipe->isi->dev, "mxc_isi_channel_set_csc: ENTER\n");
+
 	val = mxc_isi_read(pipe, CHNL_IMG_CTRL);
 	val &= ~(CHNL_IMG_CTRL_CSC_BYPASS | CHNL_IMG_CTRL_CSC_MODE_MASK);
 
@@ -276,6 +286,8 @@ void mxc_isi_channel_set_alpha(struct mxc_isi_pipe *pipe, u8 alpha)
 {
 	u32 val;
 
+	dev_dbg(pipe->isi->dev, "mxc_isi_channel_set_alpha: ENTER alpha=%u\n", alpha);
+
 	val = mxc_isi_read(pipe, CHNL_IMG_CTRL);
 	val &= ~CHNL_IMG_CTRL_GBL_ALPHA_VAL_MASK;
 	val |= CHNL_IMG_CTRL_GBL_ALPHA_VAL(alpha) |
@@ -286,6 +298,8 @@ void mxc_isi_channel_set_alpha(struct mxc_isi_pipe *pipe, u8 alpha)
 void mxc_isi_channel_set_flip(struct mxc_isi_pipe *pipe, bool hflip, bool vflip)
 {
 	u32 val;
+
+	dev_dbg(pipe->isi->dev, "mxc_isi_channel_set_flip: ENTER hflip=%d vflip=%d\n", hflip, vflip);
 
 	val = mxc_isi_read(pipe, CHNL_IMG_CTRL);
 	val &= ~(CHNL_IMG_CTRL_VFLIP_EN | CHNL_IMG_CTRL_HFLIP_EN);
@@ -302,6 +316,8 @@ static void mxc_isi_channel_set_panic_threshold(struct mxc_isi_pipe *pipe)
 {
 	const struct mxc_isi_set_thd *set_thd = pipe->isi->pdata->set_thd;
 	u32 val;
+
+	dev_dbg(pipe->isi->dev, "mxc_isi_channel_set_panic_threshold: ENTER\n");
 
 	val = mxc_isi_read(pipe, CHNL_OUT_BUF_CTRL);
 
@@ -322,6 +338,8 @@ static void mxc_isi_channel_set_control(struct mxc_isi_pipe *pipe,
 					bool bypass)
 {
 	u32 val;
+
+	dev_dbg(pipe->isi->dev, "mxc_isi_channel_set_control: ENTER input=%d bypass=%d\n", input, bypass);
 
 	mutex_lock(&pipe->lock);
 
@@ -376,6 +394,9 @@ void mxc_isi_channel_config(struct mxc_isi_pipe *pipe,
 	bool csc_bypass;
 	bool scaler_bypass;
 
+	dev_dbg(pipe->isi->dev, "mxc_isi_channel_config: ENTER input=%d in_size=%ux%u\n",
+		 input, in_size->width, in_size->height);
+
 	/* Input frame size */
 	mxc_isi_write(pipe, CHNL_IMG_CFG,
 		      CHNL_IMG_CFG_HEIGHT(in_size->height) |
@@ -398,6 +419,8 @@ void mxc_isi_channel_config(struct mxc_isi_pipe *pipe,
 
 	/* Channel control */
 	mxc_isi_channel_set_control(pipe, input, csc_bypass && scaler_bypass);
+
+	dev_dbg(pipe->isi->dev, "mxc_isi_channel_config: EXIT\n");
 }
 
 void mxc_isi_channel_set_input_format(struct mxc_isi_pipe *pipe,
@@ -405,6 +428,8 @@ void mxc_isi_channel_set_input_format(struct mxc_isi_pipe *pipe,
 				      const struct v4l2_pix_format_mplane *format)
 {
 	unsigned int bpl = format->plane_fmt[0].bytesperline;
+
+	dev_dbg(pipe->isi->dev, "mxc_isi_channel_set_input_format: ENTER bpl=%u\n", bpl);
 
 	mxc_isi_write(pipe, CHNL_MEM_RD_CTRL,
 		      CHNL_MEM_RD_CTRL_IMG_TYPE(info->isi_in_format));
@@ -419,7 +444,7 @@ void mxc_isi_channel_set_output_format(struct mxc_isi_pipe *pipe,
 	u32 val;
 
 	/* set outbuf format */
-	dev_dbg(pipe->isi->dev, "output format %p4cc", &format->pixelformat);
+	dev_dbg(pipe->isi->dev, "mxc_isi_channel_set_output_format: ENTER format %p4cc", &format->pixelformat);
 
 	val = mxc_isi_read(pipe, CHNL_IMG_CTRL);
 	val &= ~CHNL_IMG_CTRL_FORMAT_MASK;
@@ -491,6 +516,7 @@ static void mxc_isi_channel_irq_disable(struct mxc_isi_pipe *pipe)
 
 static void mxc_isi_channel_sw_reset(struct mxc_isi_pipe *pipe, bool enable_clk)
 {
+	dev_dbg(pipe->isi->dev, "mxc_isi_channel_sw_reset: ENTER enable_clk=%d\n", enable_clk);
 	mxc_isi_write(pipe, CHNL_CTRL, CHNL_CTRL_SW_RST);
 	mdelay(5);
 	mxc_isi_write(pipe, CHNL_CTRL, enable_clk ? CHNL_CTRL_CLK_EN : 0);
@@ -504,9 +530,11 @@ static void __mxc_isi_channel_get(struct mxc_isi_pipe *pipe)
 
 void mxc_isi_channel_get(struct mxc_isi_pipe *pipe)
 {
+	dev_dbg(pipe->isi->dev, "mxc_isi_channel_get: ENTER\n");
 	mutex_lock(&pipe->lock);
 	__mxc_isi_channel_get(pipe);
 	mutex_unlock(&pipe->lock);
+	dev_dbg(pipe->isi->dev, "mxc_isi_channel_get: EXIT\n");
 }
 
 static void __mxc_isi_channel_put(struct mxc_isi_pipe *pipe)
@@ -517,14 +545,18 @@ static void __mxc_isi_channel_put(struct mxc_isi_pipe *pipe)
 
 void mxc_isi_channel_put(struct mxc_isi_pipe *pipe)
 {
+	dev_dbg(pipe->isi->dev, "mxc_isi_channel_put: ENTER\n");
 	mutex_lock(&pipe->lock);
 	__mxc_isi_channel_put(pipe);
 	mutex_unlock(&pipe->lock);
+	dev_dbg(pipe->isi->dev, "mxc_isi_channel_put: EXIT\n");
 }
 
 void mxc_isi_channel_enable(struct mxc_isi_pipe *pipe)
 {
 	u32 val;
+
+	dev_dbg(pipe->isi->dev, "mxc_isi_channel_enable: ENTER\n");
 
 	mxc_isi_channel_irq_enable(pipe);
 
@@ -535,11 +567,15 @@ void mxc_isi_channel_enable(struct mxc_isi_pipe *pipe)
 	mxc_isi_write(pipe, CHNL_CTRL, val);
 
 	mutex_unlock(&pipe->lock);
+
+	dev_dbg(pipe->isi->dev, "mxc_isi_channel_enable: EXIT\n");
 }
 
 void mxc_isi_channel_disable(struct mxc_isi_pipe *pipe)
 {
 	u32 val;
+
+	dev_dbg(pipe->isi->dev, "mxc_isi_channel_disable: ENTER\n");
 
 	mxc_isi_channel_irq_disable(pipe);
 
@@ -550,6 +586,8 @@ void mxc_isi_channel_disable(struct mxc_isi_pipe *pipe)
 	mxc_isi_write(pipe, CHNL_CTRL, val);
 
 	mutex_unlock(&pipe->lock);
+
+	dev_dbg(pipe->isi->dev, "mxc_isi_channel_disable: EXIT\n");
 }
 
 /* -----------------------------------------------------------------------------
@@ -560,6 +598,8 @@ int mxc_isi_channel_acquire(struct mxc_isi_pipe *pipe,
 {
 	u8 resources;
 	int ret = 0;
+
+	dev_dbg(pipe->isi->dev, "mxc_isi_channel_acquire: ENTER bypass=%d\n", bypass);
 
 	mutex_lock(&pipe->lock);
 
@@ -588,11 +628,14 @@ int mxc_isi_channel_acquire(struct mxc_isi_pipe *pipe,
 unlock:
 	mutex_unlock(&pipe->lock);
 
+	dev_dbg(pipe->isi->dev, "mxc_isi_channel_acquire: EXIT ret=%d\n", ret);
 	return ret;
 }
 
 void mxc_isi_channel_release(struct mxc_isi_pipe *pipe)
 {
+	dev_dbg(pipe->isi->dev, "mxc_isi_channel_release: ENTER\n");
+
 	mutex_lock(&pipe->lock);
 
 	pipe->irq_handler = NULL;
@@ -600,6 +643,8 @@ void mxc_isi_channel_release(struct mxc_isi_pipe *pipe)
 	pipe->acquired_res = 0;
 
 	mutex_unlock(&pipe->lock);
+
+	dev_dbg(pipe->isi->dev, "mxc_isi_channel_release: EXIT\n");
 }
 
 /*
@@ -616,14 +661,18 @@ int mxc_isi_channel_chain(struct mxc_isi_pipe *pipe, bool bypass)
 	struct mxc_isi_pipe *chained_pipe = pipe + 1;
 	int ret = 0;
 
+	dev_dbg(pipe->isi->dev, "mxc_isi_channel_chain: ENTER bypass=%d\n", bypass);
+
 	/*
 	 * If buffer chaining is required, make sure this channel is not the
 	 * last one, otherwise there's no 'next' channel to chain with. This
 	 * should be prevented by checks in the set format handlers, but let's
 	 * be defensive.
 	 */
-	if (WARN_ON(pipe->id == pipe->isi->pdata->num_channels - 1))
+	if (WARN_ON(pipe->id == pipe->isi->pdata->num_channels - 1)) {
+		dev_dbg(pipe->isi->dev, "mxc_isi_channel_chain: EXIT ret=-EINVAL (last channel)\n");
 		return -EINVAL;
+	}
 
 	mutex_lock(&chained_pipe->lock);
 
@@ -647,6 +696,7 @@ int mxc_isi_channel_chain(struct mxc_isi_pipe *pipe, bool bypass)
 unlock:
 	mutex_unlock(&chained_pipe->lock);
 
+	dev_dbg(pipe->isi->dev, "mxc_isi_channel_chain: EXIT ret=%d\n", ret);
 	return ret;
 }
 
@@ -654,8 +704,12 @@ void mxc_isi_channel_unchain(struct mxc_isi_pipe *pipe)
 {
 	struct mxc_isi_pipe *chained_pipe = pipe + 1;
 
-	if (!pipe->chained)
+	dev_dbg(pipe->isi->dev, "mxc_isi_channel_unchain: ENTER\n");
+
+	if (!pipe->chained) {
+		dev_dbg(pipe->isi->dev, "mxc_isi_channel_unchain: EXIT (not chained)\n");
 		return;
+	}
 
 	pipe->chained = false;
 
@@ -667,4 +721,6 @@ void mxc_isi_channel_unchain(struct mxc_isi_pipe *pipe)
 	__mxc_isi_channel_put(chained_pipe);
 
 	mutex_unlock(&chained_pipe->lock);
+
+	dev_dbg(pipe->isi->dev, "mxc_isi_channel_unchain: EXIT\n");
 }

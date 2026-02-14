@@ -205,9 +205,13 @@ static int dphy_write(struct dw_dphy *priv, unsigned int index, u32 val)
 {
 	const struct dw_dphy_reg *reg;
 	u32 mask;
+	int ret;
+
+	dev_dbg(priv->dev, "dphy_write: ENTER index=%u val=0x%x\n", index, val);
 
 	if (index >= priv->drv_data->regs_size) {
 		dev_err(priv->dev, "Index out of range in %s\n", __func__);
+		dev_dbg(priv->dev, "dphy_write: EXIT ret=%d\n", -EINVAL);
 		return -EINVAL;
 	}
 
@@ -215,8 +219,10 @@ static int dphy_write(struct dw_dphy *priv, unsigned int index, u32 val)
 	mask = reg->mask << reg->shift;
 	val <<= reg->shift;
 
-	return regmap_update_bits(priv->dphy_regmap,
+	ret = regmap_update_bits(priv->dphy_regmap,
 				  reg->offset + priv->reg_off, mask, val);
+	dev_dbg(priv->dev, "dphy_write: EXIT ret=%d\n", ret);
+	return ret;
 }
 
 static void dw_dphy_dump_regs(struct dw_dphy *priv)
@@ -237,6 +243,8 @@ static void dw_dphy_dump_regs(struct dw_dphy *priv)
 	unsigned int i;
 	u32 cfg;
 
+	dev_dbg(priv->dev, "dw_dphy_dump_regs: ENTER\n");
+
 	dev_dbg(priv->dev, "--- DPHY registers from CSIS ---");
 
 	for (i = 0; i < ARRAY_SIZE(csis_registers); i++) {
@@ -244,6 +252,8 @@ static void dw_dphy_dump_regs(struct dw_dphy *priv)
 		dev_dbg(priv->dev, "%14s[0x%02x]: 0x%08x\n",
 			csis_registers[i].name, csis_registers[i].offset, cfg);
 	}
+
+	dev_dbg(priv->dev, "dw_dphy_dump_regs: EXIT\n");
 }
 
 static int dw_dphy_init(struct phy *phy)
@@ -253,6 +263,8 @@ static int dw_dphy_init(struct phy *phy)
 	struct device_node *np = dev->of_node;
 	struct regmap *csis;
 	int ret;
+
+	dev_dbg(dev, "dw_dphy_init: ENTER\n");
 
 	/*
 	 * PHY driver depend on CSI controller to provide partial
@@ -265,7 +277,9 @@ static int dw_dphy_init(struct phy *phy)
 		csis = syscon_regmap_lookup_by_phandle(np, "fsl,csis");
 		if (IS_ERR(csis)) {
 			dev_err(dev, "failed to get csi controller\n");
-			return PTR_ERR(csis);
+			ret = PTR_ERR(csis);
+			dev_dbg(dev, "dw_dphy_init: EXIT ret=%d (csis lookup failed)\n", ret);
+			return ret;
 		}
 
 		priv->csis_regmap = csis;
@@ -280,18 +294,24 @@ static int dw_dphy_init(struct phy *phy)
 	}
 
 	ret = phy_pm_runtime_get_sync(phy);
-	if (ret < 0)
+	if (ret < 0) {
+		dev_dbg(dev, "dw_dphy_init: EXIT ret=%d (pm_runtime_get_sync failed)\n", ret);
 		return ret;
+	}
 
-	return clk_prepare_enable(priv->cfg_clk);
+	ret = clk_prepare_enable(priv->cfg_clk);
+	dev_dbg(dev, "dw_dphy_init: EXIT ret=%d\n", ret);
+	return ret;
 }
 
 static int dw_dphy_exit(struct phy *phy)
 {
 	struct dw_dphy *priv = phy_get_drvdata(phy);
 
+	dev_dbg(priv->dev, "dw_dphy_exit: ENTER\n");
 	clk_disable_unprepare(priv->cfg_clk);
 	phy_pm_runtime_put(phy);
+	dev_dbg(priv->dev, "dw_dphy_exit: EXIT ret=0\n");
 	return 0;
 }
 
@@ -301,6 +321,10 @@ static int dw_dphy_power_on(struct phy *phy)
 	const struct dw_dphy_drv_data *drv_data = priv->drv_data;
 	struct phy_configure_opts_mipi_dphy *config = &priv->config;
 	u32 val;
+
+	dev_dbg(priv->dev, "dw_dphy_power_on: ENTER\n");
+	dev_dbg(priv->dev, "DPHY-PWR: power_on BEGIN lanes=%d hs_clk=%llu combo=%s\n",
+		 config->lanes, config->hs_clk_rate, priv->dsi_regmap ? "yes" : "no");
 
 	/* Release Synopsys DPHY test codes from reset */
 	csis_write(priv, CSIS_DPHY_RSTZ, 0x0);
@@ -332,17 +356,29 @@ static int dw_dphy_power_on(struct phy *phy)
 	}
 
 	/* Config the number of active lanes */
+	dev_dbg(priv->dev, "DPHY-PWR: writing N_LANES=%d (reg val=0x%x)\n",
+		 config->lanes, N_LANES(config->lanes));
 	csis_write(priv, CSIS_N_LANES, N_LANES(config->lanes));
 
+	dev_dbg(priv->dev, "DPHY-PWR: calling platform-specific config\n");
 	drv_data->cfg_ops->config(priv);
 
 	/* Release PHY from reset */
+	dev_dbg(priv->dev, "DPHY-PWR: releasing PHY from reset (shutdownz=1, rstz=1)\n");
 	csis_write(priv, CSIS_DPHY_SHUTDOWNZ, 0x1);
 	ndelay(5);
 	csis_write(priv, CSIS_DPHY_RSTZ, 0x1);
 	ndelay(5);
 
+	/* Read back DPHY status after power on */
+	val = csis_read(priv, CSIS_DPHY_RX);
+	dev_dbg(priv->dev, "DPHY-PWR: DPHY_RX_STATUS=0x%08x after power_on\n", val);
+	val = csis_read(priv, CSIS_DPHY_STOPSTATE);
+	dev_dbg(priv->dev, "DPHY-PWR: DPHY_STOPSTATE=0x%08x after power_on\n", val);
+
 	dw_dphy_dump_regs(priv);
+	dev_dbg(priv->dev, "DPHY-PWR: power_on DONE\n");
+	dev_dbg(priv->dev, "dw_dphy_power_on: EXIT ret=0\n");
 	return 0;
 }
 
@@ -350,9 +386,11 @@ static int dw_dphy_power_off(struct phy *phy)
 {
 	struct dw_dphy *priv = phy_get_drvdata(phy);
 
+	dev_dbg(priv->dev, "dw_dphy_power_off: ENTER\n");
 	csis_write(priv, CSIS_N_LANES, 0);
 	csis_write(priv, CSIS_DPHY_RSTZ, 0x0);
 	csis_write(priv, CSIS_DPHY_SHUTDOWNZ, 0x0);
+	dev_dbg(priv->dev, "dw_dphy_power_off: EXIT ret=0\n");
 	return 0;
 }
 
@@ -360,6 +398,8 @@ static int set_freqrange_by_mpbs(struct dw_dphy *priv, u64 mbps)
 {
 	const struct dphy_mbps_hsfreqrange_map *value;
 	const struct dphy_mbps_hsfreqrange_map *prev_value = NULL;
+
+	dev_dbg(priv->dev, "set_freqrange_by_mpbs: ENTER mbps=%llu\n", mbps);
 
 	for (value = hsfreqrange_table; value->mbps; value++) {
 		if (value->mbps >= mbps)
@@ -373,12 +413,14 @@ static int set_freqrange_by_mpbs(struct dw_dphy *priv, u64 mbps)
 
 	if (!value->mbps) {
 		pr_err("Unsupported PHY speed (%llu Mbps)", mbps);
+		dev_dbg(priv->dev, "set_freqrange_by_mpbs: EXIT ret=%d\n", -ERANGE);
 		return -ERANGE;
 	}
 
 	priv->hsfreqrange = value->hsfreqrange;
 	priv->ddlfreq = value->ddlfreq;
 
+	dev_dbg(priv->dev, "set_freqrange_by_mpbs: EXIT ret=0\n");
 	return 0;
 }
 
@@ -391,27 +433,41 @@ static int dw_dphy_configure(struct phy *phy, union phy_configure_opts *opts)
 	u64 data_rate_mbps;
 	int ret;
 
+	dev_dbg(dev, "dw_dphy_configure: ENTER\n");
+	dev_dbg(dev, "DPHY-CFG: configure called: lanes=%d hs_clk_rate=%llu max_lanes=%u max_data_rate=%u\n",
+		 config->lanes, config->hs_clk_rate, drv_data->max_lanes, drv_data->max_data_rate);
+
 	if (config->lanes > drv_data->max_lanes) {
-		dev_err(dev, "The number of lanes has exceeded the maximum value\n");
+		dev_err(dev, "DPHY-CFG: lanes %d > max %d\n", config->lanes, drv_data->max_lanes);
+		dev_dbg(dev, "dw_dphy_configure: EXIT ret=%d\n", -EINVAL);
 		return -EINVAL;
 	}
 
 	data_rate_mbps = div_u64(config->hs_clk_rate, 1000 * 1000);
 	if (data_rate_mbps < 80 ||
 	    data_rate_mbps > drv_data->max_data_rate) {
-		dev_err(dev, "Out-of-bound lane rate %llu\n", data_rate_mbps);
+		dev_err(dev, "DPHY-CFG: Out-of-bound lane rate %llu Mbps (min=80, max=%u)\n",
+			data_rate_mbps, drv_data->max_data_rate);
+		dev_dbg(dev, "dw_dphy_configure: EXIT ret=%d\n", -EINVAL);
 		return -EINVAL;
 	}
 
-	dev_dbg(dev, "Number of lanes: %d, data rate=%llu(Mbps)\n",
-		config->lanes, data_rate_mbps);
+	dev_dbg(dev, "DPHY-CFG: lanes=%d data_rate=%llu Mbps\n",
+		 config->lanes, data_rate_mbps);
 
 	ret = set_freqrange_by_mpbs(priv, data_rate_mbps);
-	if (ret < 0)
+	if (ret < 0) {
+		dev_err(dev, "DPHY-CFG: set_freqrange FAILED for %llu Mbps\n", data_rate_mbps);
+		dev_dbg(dev, "dw_dphy_configure: EXIT ret=%d\n", ret);
 		return ret;
+	}
+
+	dev_dbg(dev, "DPHY-CFG: hsfreqrange=0x%x ddlfreq=0x%x cfgclkfreqrange=0x%x\n",
+		 priv->hsfreqrange, priv->ddlfreq, priv->cfgclkfreqrange);
 
 	priv->config = *config;
 
+	dev_dbg(dev, "dw_dphy_configure: EXIT ret=0\n");
 	return 0;
 }
 
@@ -419,6 +475,8 @@ static int dw_dphy_reset(struct phy *phy)
 {
 	struct dw_dphy *priv = phy_get_drvdata(phy);
 	u32 val;
+
+	dev_dbg(priv->dev, "dw_dphy_reset: ENTER\n");
 
 	/* Apply PHY Reset */
 	csis_write(priv, CSIS_DPHY_RSTZ, 0x0);
@@ -440,6 +498,7 @@ static int dw_dphy_reset(struct phy *phy)
 	val &= ~PHY_TESTCLR;
 	csis_write(priv, CSIS_DPHY_TEST_CTRL0, val);
 
+	dev_dbg(priv->dev, "dw_dphy_reset: EXIT ret=0\n");
 	return 0;
 }
 
@@ -466,9 +525,13 @@ static const struct dw_dphy_reg imx93_dphy_regs[] = {
 
 static void imx93_dphy_config(struct dw_dphy *priv)
 {
+	dev_dbg(priv->dev, "imx93_dphy_config: ENTER\n");
+
 	/* Configure the PHY frequency range */
 	dphy_write(priv, DPHY_RX_CFGCLKFREQRANGE, priv->cfgclkfreqrange);
 	dphy_write(priv, DPHY_RX_HSFREQRANGE, priv->hsfreqrange);
+
+	dev_dbg(priv->dev, "imx93_dphy_config: EXIT\n");
 }
 
 static const struct dw_dphy_config_ops imx93_dphy_cfg_ops = {
@@ -509,6 +572,12 @@ static void imx95_dphy_config(struct dw_dphy *priv)
 	struct phy_configure_opts_mipi_dphy *config = &priv->config;
 	u32 active_lanes = GENMASK(config->lanes - 1, 0);
 
+	dev_dbg(priv->dev, "imx95_dphy_config: ENTER\n");
+	dev_dbg(priv->dev, "DPHY-IMX95: config BEGIN lanes=%d active_lanes=0x%x\n",
+		 config->lanes, active_lanes);
+	dev_dbg(priv->dev, "DPHY-IMX95: cfgclkfreqrange=0x%x hsfreqrange=0x%x\n",
+		 priv->cfgclkfreqrange, priv->hsfreqrange);
+
 	/* Configure the PHY frequency range */
 	dphy_write(priv, DPHY_RX_CFGCLKFREQRANGE, priv->cfgclkfreqrange);
 	dphy_write(priv, DPHY_RX_HSFREQRANGE, priv->hsfreqrange);
@@ -516,6 +585,7 @@ static void imx95_dphy_config(struct dw_dphy *priv)
 	dphy_write(priv, DPHY_RX_DATA_LANE_BASEDIR, 1);
 	ndelay(15);
 
+	dev_dbg(priv->dev, "DPHY-IMX95: forcing RX mode on lanes 0x%x\n", active_lanes);
 	dphy_write(priv, DPHY_RX_DATA_LANE_FORCERXMODE, active_lanes);
 	ndelay(15);
 
@@ -523,6 +593,9 @@ static void imx95_dphy_config(struct dw_dphy *priv)
 	dphy_write(priv, DPHY_RX_DATA_LANE_FORCERXMODE, 0);
 	dphy_write(priv, DPHY_RX_ENABLE_CLK_EXT, 1);
 	dphy_write(priv, DPHY_RX_PHY_ENABLE_BYP, 1);
+
+	dev_dbg(priv->dev, "DPHY-IMX95: config DONE (CLK_EXT=1, PHY_ENABLE_BYP=1)\n");
+	dev_dbg(priv->dev, "imx95_dphy_config: EXIT\n");
 }
 
 static const struct dw_dphy_config_ops imx95_dphy_cfg_ops = {
@@ -555,6 +628,8 @@ static void dphy_intf_send_cmd(struct regmap *base,
 			       u32 intf0, u32 intf1,
 			       u32 addr, u32 data)
 {
+	pr_info("DPHY: dphy_intf_send_cmd: ENTER addr=0x%x data=0x%x\n", addr, data);
+
 	/* Initialize the phy interface communication */
 	regmap_write(base, intf0, 0x0);
 	regmap_write(base, intf1, 0x0);
@@ -580,6 +655,8 @@ static void dphy_intf_send_cmd(struct regmap *base,
 	/* Send the data */
 	regmap_write(base, intf1, PHY_TESTIN(data));
 	regmap_write(base, intf0, PHY_TESTCLK);
+
+	pr_info("DPHY: dphy_intf_send_cmd: EXIT\n");
 }
 
 static inline void tx_dphy_write_control(struct dw_dphy *priv,
@@ -604,6 +681,9 @@ static void imx95_combo_config(struct dw_dphy *priv)
 {
 	struct phy_configure_opts_mipi_dphy *config = &priv->config;
 	u32 active_lanes = GENMASK(config->lanes - 1, 0);
+
+	dev_dbg(priv->dev, "imx95_combo_config: ENTER lanes=%d active_lanes=0x%x\n",
+		 config->lanes, active_lanes);
 
 	/* Configure the PHY frequency range */
 	dphy_write(priv, DPHY_RX_HSFREQRANGE, priv->hsfreqrange);
@@ -639,6 +719,8 @@ static void imx95_combo_config(struct dw_dphy *priv)
 	dphy_write(priv, DPHY_RX_ENABLE_CLK_EXT, 1);
 	dphy_write(priv, DPHY_RX_TURNDISABLE, 0);
 	dphy_write(priv, DPHY_RX_PHY_ENABLE_BYP, 1);
+
+	dev_dbg(priv->dev, "imx95_combo_config: EXIT\n");
 }
 
 static const struct dw_dphy_config_ops imx95_combo_cfg_ops = {
@@ -669,13 +751,20 @@ static int dw_dphy_probe(struct platform_device *pdev)
 	struct dw_dphy *priv;
 	struct phy *phy;
 	unsigned long cfg_rate;
+	int ret;
 
-	if (!dev->parent || !dev->parent->of_node)
+	dev_dbg(dev, "dw_dphy_probe: ENTER\n");
+
+	if (!dev->parent || !dev->parent->of_node) {
+		dev_dbg(dev, "dw_dphy_probe: EXIT ret=%d (no parent)\n", -ENODEV);
 		return -ENODEV;
+	}
 
 	priv = devm_kzalloc(dev, sizeof(*priv), GFP_KERNEL);
-	if (!priv)
+	if (!priv) {
+		dev_dbg(dev, "dw_dphy_probe: EXIT ret=%d (alloc failed)\n", -ENOMEM);
 		return -ENOMEM;
+	}
 
 	priv->dev = dev;
 	priv->drv_data = of_device_get_match_data(dev);
@@ -683,19 +772,23 @@ static int dw_dphy_probe(struct platform_device *pdev)
 	priv->dphy_regmap = syscon_node_to_regmap(dev->parent->of_node);
 	if (IS_ERR(priv->dphy_regmap)) {
 		dev_err(dev, "Failed to DPHY regmap\n");
+		dev_dbg(dev, "dw_dphy_probe: EXIT ret=%d (regmap failed)\n", -ENODEV);
 		return -ENODEV;
 	}
 
 	priv->cfg_clk = devm_clk_get(dev, "phy_cfg");
 	if (IS_ERR(priv->cfg_clk)) {
 		dev_err(dev, "Failed to get DPHY config clock\n");
-		return PTR_ERR(priv->cfg_clk);
+		ret = PTR_ERR(priv->cfg_clk);
+		dev_dbg(dev, "dw_dphy_probe: EXIT ret=%d (cfg_clk failed)\n", ret);
+		return ret;
 	}
 
 	/* cfgclkfreqrange[5:0] = round[(cfg_clk(MHz) - 17) * 4] */
 	cfg_rate = clk_get_rate(priv->cfg_clk);
 	if (!cfg_rate) {
 		dev_err(dev, "Failed to get PHY config clock rate\n");
+		dev_dbg(dev, "dw_dphy_probe: EXIT ret=%d (cfg_rate=0)\n", -EINVAL);
 		return -EINVAL;
 	}
 	priv->cfgclkfreqrange = (div_u64(cfg_rate, 1000 * 1000) - 17) * 4;
@@ -706,18 +799,24 @@ static int dw_dphy_probe(struct platform_device *pdev)
 	if (IS_ERR(phy)) {
 		dev_err(dev, "Failed to create PHY\n");
 		pm_runtime_disable(dev);
-		return PTR_ERR(phy);
+		ret = PTR_ERR(phy);
+		dev_dbg(dev, "dw_dphy_probe: EXIT ret=%d (phy_create failed)\n", ret);
+		return ret;
 	}
 	phy_set_drvdata(phy, priv);
 
 	phy_provider = devm_of_phy_provider_register(dev, of_phy_simple_xlate);
 
-	return PTR_ERR_OR_ZERO(phy_provider);
+	ret = PTR_ERR_OR_ZERO(phy_provider);
+	dev_dbg(dev, "dw_dphy_probe: EXIT ret=%d\n", ret);
+	return ret;
 }
 
 static void dw_dphy_remove(struct platform_device *pdev)
 {
+	dev_dbg(&pdev->dev, "dw_dphy_remove: ENTER\n");
 	pm_runtime_disable(&pdev->dev);
+	dev_dbg(&pdev->dev, "dw_dphy_remove: EXIT\n");
 }
 
 static struct platform_driver dw_dphy_driver = {

@@ -558,16 +558,22 @@ static int dwc_csi_device_pg_enable(struct dwc_csi_device *csidev)
 	struct v4l2_subdev_state *state;
 	u32 val;
 
-	if (!csidev->pg_enable)
+	dev_dbg(csidev->dev, "dwc_csi_device_pg_enable: ENTER\n");
+
+	if (!csidev->pg_enable) {
+		dev_dbg(csidev->dev, "dwc_csi_device_pg_enable: EXIT ret=0 (pg not enabled)\n");
 		return 0;
+	}
 
 	if (!csi_fmt) {
 		dev_err(csidev->dev, "CSI pixel format is NULL\n");
+		dev_dbg(csidev->dev, "dwc_csi_device_pg_enable: EXIT ret=-EINVAL (NULL fmt)\n");
 		return -EINVAL;
 	}
 
 	if (csi_fmt->data_type != MIPI_CSI2_DT_RGB888) {
 		dev_err(csidev->dev, "Pattern generator only support RGB888\n");
+		dev_dbg(csidev->dev, "dwc_csi_device_pg_enable: EXIT ret=-EINVAL (not RGB888)\n");
 		return -EINVAL;
 	}
 
@@ -599,17 +605,22 @@ static int dwc_csi_device_pg_enable(struct dwc_csi_device *csidev)
 	dwc_csi_write(csidev, CSI2RX_PPI_PG_ENABLE, val);
 
 	v4l2_subdev_unlock_state(state);
+	dev_dbg(csidev->dev, "dwc_csi_device_pg_enable: EXIT ret=0\n");
 	return 0;
 }
 
 static void dwc_csi_device_pg_disable(struct dwc_csi_device *csidev)
 {
+	dev_dbg(csidev->dev, "dwc_csi_device_pg_disable: ENTER\n");
 	dwc_csi_write(csidev, CSI2RX_PPI_PG_ENABLE, 0);
+	dev_dbg(csidev->dev, "dwc_csi_device_pg_disable: EXIT\n");
 }
 
 static void dwc_csi_ipi_enable(struct dwc_csi_device *csidev)
 {
 	u32 val;
+
+	dev_dbg(csidev->dev, "dwc_csi_ipi_enable: ENTER\n");
 
 	/* Memory is automatically flushed at each Frame Start */
 	val = CSI2RX_IPI_MEM_FLUSH_AUTO;
@@ -619,17 +630,23 @@ static void dwc_csi_ipi_enable(struct dwc_csi_device *csidev)
 	val = dwc_csi_read(csidev, CSI2RX_IPI_MODE);
 	val |= CSI2RX_IPI_MODE_ENABLE;
 	dwc_csi_write(csidev, CSI2RX_IPI_MODE, val);
+
+	dev_dbg(csidev->dev, "dwc_csi_ipi_enable: EXIT\n");
 }
 
 static void dwc_csi_ipi_disable(struct dwc_csi_device *csidev)
 {
+	dev_dbg(csidev->dev, "dwc_csi_ipi_disable: ENTER\n");
 	dwc_csi_write(csidev, CSI2RX_IPI_MODE, 0);
+	dev_dbg(csidev->dev, "dwc_csi_ipi_disable: EXIT\n");
 }
 
 static void dwc_csi_device_ipi_config(struct dwc_csi_device *csidev)
 {
 	const struct dwc_csi_pix_format *csi_fmt = csidev->csi_fmt;
 	u32 val;
+
+	dev_dbg(csidev->dev, "dwc_csi_device_ipi_config: ENTER\n");
 
 	/* Do IPI soft reset */
 	dwc_csi_write(csidev, CSI2RX_IPI_SOFTRSTN, 0x0);
@@ -652,17 +669,23 @@ static void dwc_csi_device_ipi_config(struct dwc_csi_device *csidev)
 	val &= ~CSI2RX_IPI_MODE_COLOR_MODE16;
 	val |= CSI2RX_IPI_MODE_CUT_THROUGH;
 	dwc_csi_write(csidev, CSI2RX_IPI_MODE, val);
+
+	dev_dbg(csidev->dev, "dwc_csi_device_ipi_config: EXIT\n");
 }
 
 static void dwc_csi_device_reset(struct dwc_csi_device *csidev)
 {
+	dev_dbg(csidev->dev, "dwc_csi_device_reset: ENTER\n");
 	/* Reset mipi csi host, active low */
 	dwc_csi_write(csidev, CSI2RX_HOST_RESETN, 0);
 	dwc_csi_write(csidev, CSI2RX_HOST_RESETN, 1);
+	dev_dbg(csidev->dev, "dwc_csi_device_reset: EXIT\n");
 }
 
 static void dwc_csi_device_startup(struct dwc_csi_device *csidev)
 {
+	dev_dbg(csidev->dev, "dwc_csi_device_startup: ENTER\n");
+
 	/* Release DWC_mipi_csi2_host from reset */
 	dwc_csi_device_reset(csidev);
 
@@ -670,6 +693,8 @@ static void dwc_csi_device_startup(struct dwc_csi_device *csidev)
 
 	/* Apply PHY Reset */
 	phy_reset(csidev->phy);
+
+	dev_dbg(csidev->dev, "dwc_csi_device_startup: EXIT\n");
 }
 
 static int dwc_csi_get_dphy_configuration(struct dwc_csi_device *csidev,
@@ -679,19 +704,27 @@ static int dwc_csi_get_dphy_configuration(struct dwc_csi_device *csidev,
 	struct v4l2_subdev *source = csidev->source_sd;
 	s64 link_freq;
 
+	dev_dbg(csidev->dev, "DWC-DPHY-CFG: getting config from source=%s num_data_lanes=%u csi_fmt_width=%u\n",
+		 source->name, csidev->bus.num_data_lanes, csidev->csi_fmt->width);
+
 	link_freq = v4l2_get_link_freq(source->ctrl_handler,
 				       csidev->csi_fmt->width,
 				       csidev->bus.num_data_lanes * 2);
 	if (link_freq < 0) {
-		dev_err(csidev->dev, "Unable to obtain link frequency: %d\n",
+		dev_err(csidev->dev, "DWC-DPHY-CFG: Unable to obtain link frequency: %d\n",
 			(int)link_freq);
+		dev_dbg(csidev->dev, "dwc_csi_get_dphy_configuration: EXIT ret=%d\n", (int)link_freq);
 		return link_freq;
 	}
+
+	dev_dbg(csidev->dev, "DWC-DPHY-CFG: link_freq=%lld Hz hs_clk_rate=%lld Hz lanes=%u\n",
+		 link_freq, link_freq * 2, csidev->bus.num_data_lanes);
 
 	memset(cfg, 0x0, sizeof(*cfg));
 	cfg->hs_clk_rate = link_freq * 2;
 	cfg->lanes = csidev->bus.num_data_lanes;
 
+	dev_dbg(csidev->dev, "dwc_csi_get_dphy_configuration: EXIT ret=0\n");
 	return 0;
 }
 
@@ -703,40 +736,79 @@ static int dwc_csi_device_init(struct dwc_csi_device *csidev)
 	u32 val;
 	int ret;
 
-	ret = dwc_csi_get_dphy_configuration(csidev, &opts);
-	if (ret)
-		return ret;
+	dev_dbg(dev, "DWC-INIT: device_init BEGIN num_data_lanes=%u\n",
+		 csidev->bus.num_data_lanes);
 
+	ret = dwc_csi_get_dphy_configuration(csidev, &opts);
+	if (ret) {
+		dev_err(dev, "DWC-INIT: get_dphy_configuration FAILED ret=%d\n", ret);
+		return ret;
+	}
+
+	dev_dbg(dev, "DWC-INIT: phy_set_mode MIPI_DPHY\n");
 	phy_set_mode(csidev->phy, PHY_MODE_MIPI_DPHY);
+
+	dev_dbg(dev, "DWC-INIT: phy_configure\n");
 	phy_configure(csidev->phy, &opts);
 
+	dev_dbg(dev, "DWC-INIT: host_resetn=0, phy_power_on, host_resetn=1\n");
 	dwc_csi_write(csidev, CSI2RX_HOST_RESETN, 0);
 	phy_power_on(csidev->phy);
 	dwc_csi_write(csidev, CSI2RX_HOST_RESETN, 0x1);
 
+	/* Read DPHY status immediately after power on */
+	val = dwc_csi_read(csidev, CSI2RX_DPHY_RX_STATUS);
+	dev_dbg(dev, "DWC-INIT: DPHY_RX_STATUS=0x%08x (after phy_power_on)\n", val);
+	val = dwc_csi_read(csidev, CSI2RX_DPHY_STOPSTATE);
+	dev_dbg(dev, "DWC-INIT: DPHY_STOPSTATE=0x%08x (after phy_power_on)\n", val);
+
 	/* Check if lanes are in stop state */
 	phy_stopstate = CSI2RX_DPHY_STOPSTATE_CLK_LANE;
 	phy_stopstate |= GENMASK(csidev->bus.num_data_lanes - 1, 0);
+	dev_dbg(dev, "DWC-INIT: waiting for stop state mask=0x%08x (clk + %u data lanes)\n",
+		 phy_stopstate, csidev->bus.num_data_lanes);
+
 	ret = readl_poll_timeout(csidev->regs + CSI2RX_DPHY_STOPSTATE,
 				 val, (val & phy_stopstate) != phy_stopstate,
 				 10, 10000);
 	if (ret) {
-		dev_err(dev, "Lanes are not in stop state(%#x)\n", val);
+		/* Dump all DPHY status on failure */
+		u32 rx_status = dwc_csi_read(csidev, CSI2RX_DPHY_RX_STATUS);
+		u32 stop_state = dwc_csi_read(csidev, CSI2RX_DPHY_STOPSTATE);
+		u32 n_lanes = dwc_csi_read(csidev, CSI2RX_N_LANES);
+		dev_err(dev, "DWC-INIT: STOP STATE TIMEOUT! expected_mask=0x%08x got=0x%08x\n",
+			phy_stopstate, val);
+		dev_err(dev, "DWC-INIT: DPHY_RX_STATUS=0x%08x N_LANES=0x%08x STOPSTATE=0x%08x\n",
+			rx_status, n_lanes, stop_state);
+		dev_err(dev, "DWC-INIT:   CLK_LANE_HS=%s CLK_LANE_ULP=%s\n",
+			(rx_status & CSI2RX_DPHY_RX_STATUS_CLK_LANE_HS) ? "YES" : "NO",
+			(rx_status & CSI2RX_DPHY_RX_STATUS_CLK_LANE_ULP) ? "YES" : "NO");
+		dev_err(dev, "DWC-INIT:   CLK_STOP=%s D0_STOP=%s D1_STOP=%s D2_STOP=%s D3_STOP=%s\n",
+			(stop_state & CSI2RX_DPHY_STOPSTATE_CLK_LANE) ? "YES" : "NO",
+			(stop_state & CSI2RX_DPHY_STOPSTATE_DATA_LANE0) ? "YES" : "NO",
+			(stop_state & CSI2RX_DPHY_STOPSTATE_DATA_LANE1) ? "YES" : "NO",
+			(stop_state & CSI2RX_DPHY_STOPSTATE_DATA_LANE2) ? "YES" : "NO",
+			(stop_state & CSI2RX_DPHY_STOPSTATE_DATA_LANE3) ? "YES" : "NO");
 		return ret;
 	}
 
+	dev_dbg(dev, "DWC-INIT: lanes in stop state OK (val=0x%08x)\n", val);
 	return 0;
 }
 
 static void dwc_csi_device_hs_rx_start(struct dwc_csi_device *csidev)
 {
+	dev_dbg(csidev->dev, "dwc_csi_device_hs_rx_start: ENTER\n");
 	dwc_csi_ipi_enable(csidev);
+	dev_dbg(csidev->dev, "dwc_csi_device_hs_rx_start: EXIT\n");
 }
 
 static int dwc_csi_device_hs_rx_stop(struct dwc_csi_device *csidev)
 {
 	struct device *dev = csidev->dev;
 	u32 val;
+
+	dev_dbg(dev, "dwc_csi_device_hs_rx_stop: ENTER\n");
 
 	phy_power_off(csidev->phy);
 	phy_exit(csidev->phy);
@@ -746,43 +818,58 @@ static int dwc_csi_device_hs_rx_stop(struct dwc_csi_device *csidev)
 	val = dwc_csi_read(csidev, CSI2RX_DPHY_RX_STATUS);
 	if (val & CSI2RX_DPHY_RX_STATUS_CLK_LANE_HS) {
 		dev_err(dev, "Clock lanes are still in HS mode\n");
+		dev_dbg(dev, "dwc_csi_device_hs_rx_stop: EXIT ret=-EINVAL\n");
 		return -EINVAL;
 	}
 
+	dev_dbg(dev, "dwc_csi_device_hs_rx_stop: EXIT ret=0\n");
 	return 0;
 }
 
 static void dwc_csi_device_enable_interrupts(struct dwc_csi_device *csidev, bool on)
 {
+	dev_dbg(csidev->dev, "dwc_csi_device_enable_interrupts: ENTER on=%d\n", on);
 	/* Define errors to be enabled */
 	dwc_csi_write(csidev, CSI2RX_INT_MSK_DPHY_FATAL, on ? 0x3 : 0);
 	dwc_csi_write(csidev, CSI2RX_INT_MSK_PKT_FATAL, on ? 0x3 : 0);
 	dwc_csi_write(csidev, CSI2RX_INT_MSK_DPHY, on ? 0x30003 : 0);
 	dwc_csi_write(csidev, CSI2RX_INT_MSK_IPI_FATAL, on ? 0x7f : 0);
+	dev_dbg(csidev->dev, "dwc_csi_device_enable_interrupts: EXIT\n");
 }
 
 static int dwc_csi_clk_enable(struct dwc_csi_device *csidev)
 {
-	return clk_bulk_prepare_enable(DWC_NUM_CLKS, csidev->clks);
+	int ret;
+
+	dev_dbg(csidev->dev, "dwc_csi_clk_enable: ENTER\n");
+	ret = clk_bulk_prepare_enable(DWC_NUM_CLKS, csidev->clks);
+	dev_dbg(csidev->dev, "dwc_csi_clk_enable: EXIT ret=%d\n", ret);
+	return ret;
 }
 
 static void dwc_csi_clk_disable(struct dwc_csi_device *csidev)
 {
+	dev_dbg(csidev->dev, "dwc_csi_clk_disable: ENTER\n");
 	clk_bulk_disable_unprepare(DWC_NUM_CLKS, csidev->clks);
+	dev_dbg(csidev->dev, "dwc_csi_clk_disable: EXIT\n");
 }
 
 static int dwc_csi_clk_get(struct dwc_csi_device *csidev)
 {
 	int ret;
 
+	dev_dbg(csidev->dev, "dwc_csi_clk_get: ENTER\n");
+
 	memcpy(csidev->clks, dwc_clks, sizeof(dwc_clks));
 
 	ret = devm_clk_bulk_get(csidev->dev, DWC_NUM_CLKS, csidev->clks);
 	if (ret < 0) {
 		dev_err(csidev->dev, "Failed to acquire clocks: %d\n", ret);
+		dev_dbg(csidev->dev, "dwc_csi_clk_get: EXIT ret=%d\n", ret);
 		return ret;
 	}
 
+	dev_dbg(csidev->dev, "dwc_csi_clk_get: EXIT ret=0\n");
 	return 0;
 }
 
@@ -795,12 +882,16 @@ static void dwc_csi_clear_counters(struct dwc_csi_device *csidev)
 	unsigned long flags;
 	unsigned int i;
 
+	dev_dbg(csidev->dev, "dwc_csi_clear_counters: ENTER\n");
+
 	spin_lock_irqsave(&csidev->slock, flags);
 
 	for (i = 0; i < DWC_NUM_EVENTS; ++i)
 		csidev->events[i].counter = 0;
 
 	spin_unlock_irqrestore(&csidev->slock, flags);
+
+	dev_dbg(csidev->dev, "dwc_csi_clear_counters: EXIT\n");
 }
 
 static void dwc_csi_log_counters(struct dwc_csi_device *csidev)
@@ -808,16 +899,20 @@ static void dwc_csi_log_counters(struct dwc_csi_device *csidev)
 	unsigned long flags;
 	unsigned int i;
 
+	dev_dbg(csidev->dev, "dwc_csi_log_counters: ENTER\n");
+
 	spin_lock_irqsave(&csidev->slock, flags);
 
 	for (i = 0; i < DWC_NUM_EVENTS; ++i) {
 		if (csidev->events[i].counter > 0)
-			dev_info(csidev->dev, "%s events: %d\n",
+			dev_dbg(csidev->dev, "%s events: %d\n",
 				 csidev->events[i].name,
 				 csidev->events[i].counter);
 	}
 
 	spin_unlock_irqrestore(&csidev->slock, flags);
+
+	dev_dbg(csidev->dev, "dwc_csi_log_counters: EXIT\n");
 }
 
 static void dwc_csi_dump_regs(struct dwc_csi_device *csidev)
@@ -861,6 +956,7 @@ static void dwc_csi_dump_regs(struct dwc_csi_device *csidev)
 	unsigned int i;
 	u32 cfg;
 
+	dev_dbg(csidev->dev, "dwc_csi_dump_regs: ENTER\n");
 	dev_dbg(csidev->dev, "--- REGISTERS ---\n");
 
 	for (i = 0; i < ARRAY_SIZE(registers); i++) {
@@ -868,6 +964,8 @@ static void dwc_csi_dump_regs(struct dwc_csi_device *csidev)
 		dev_dbg(csidev->dev, "%14s[0x%02x]: 0x%08x\n",
 			registers[i].name, registers[i].offset, cfg);
 	}
+
+	dev_dbg(csidev->dev, "dwc_csi_dump_regs: EXIT\n");
 }
 
 /* -----------------------------------------------------------------------------
@@ -886,16 +984,24 @@ static int __dwc_csi_subdev_set_routing(struct v4l2_subdev *sd,
 {
 	int ret;
 
-	if (routing->num_routes > V4L2_FRAME_DESC_ENTRY_MAX)
+	pr_info("CSI: __dwc_csi_subdev_set_routing: ENTER\n");
+
+	if (routing->num_routes > V4L2_FRAME_DESC_ENTRY_MAX) {
+		pr_info("CSI: __dwc_csi_subdev_set_routing: EXIT ret=-EINVAL (too many routes)\n");
 		return -EINVAL;
+	}
 
 	ret = v4l2_subdev_routing_validate(sd, routing,
 					   V4L2_SUBDEV_ROUTING_ONLY_1_TO_1);
-	if (ret)
+	if (ret) {
+		pr_info("CSI: __dwc_csi_subdev_set_routing: EXIT ret=%d (validate failed)\n", ret);
 		return ret;
+	}
 
-	return v4l2_subdev_set_routing_with_fmt(sd, state, routing,
+	ret = v4l2_subdev_set_routing_with_fmt(sd, state, routing,
 						&dwc_csi_default_fmt);
+	pr_info("CSI: __dwc_csi_subdev_set_routing: EXIT ret=%d\n", ret);
+	return ret;
 }
 
 static int dwc_csi_subdev_init_state(struct v4l2_subdev *sd,
@@ -915,14 +1021,20 @@ static int dwc_csi_subdev_init_state(struct v4l2_subdev *sd,
 		.num_routes = ARRAY_SIZE(routes),
 		.routes = routes,
 	};
+	int ret;
 
-	return __dwc_csi_subdev_set_routing(sd, sd_state, &routing);
+	pr_info("CSI: dwc_csi_subdev_init_state: ENTER\n");
+	ret = __dwc_csi_subdev_set_routing(sd, sd_state, &routing);
+	pr_info("CSI: dwc_csi_subdev_init_state: EXIT ret=%d\n", ret);
+	return ret;
 }
 
 static int dwc_csi_subdev_enum_mbus_code(struct v4l2_subdev *sd,
 					  struct v4l2_subdev_state *sd_state,
 					  struct v4l2_subdev_mbus_code_enum *code)
 {
+	pr_info("CSI: dwc_csi_subdev_enum_mbus_code: ENTER pad=%u index=%u\n",
+		code->pad, code->index);
 	/*
 	 * The CSIS can't transcode in any way, the source format is identical
 	 * to the sink format.
@@ -930,20 +1042,26 @@ static int dwc_csi_subdev_enum_mbus_code(struct v4l2_subdev *sd,
 	if (code->pad == DWC_CSI2RX_PAD_SOURCE) {
 		struct v4l2_mbus_framefmt *fmt;
 
-		if (code->index > 0)
+		if (code->index > 0) {
+			pr_info("CSI: dwc_csi_subdev_enum_mbus_code: EXIT ret=-EINVAL (source index>0)\n");
 			return -EINVAL;
+		}
 
 		fmt = v4l2_subdev_state_get_format(sd_state, code->pad,
 						   code->stream);
 		code->code = fmt->code;
+		pr_info("CSI: dwc_csi_subdev_enum_mbus_code: EXIT ret=0 code=0x%x\n", code->code);
 		return 0;
 	}
 
-	if (code->index >= ARRAY_SIZE(dwc_csi_formats))
+	if (code->index >= ARRAY_SIZE(dwc_csi_formats)) {
+		pr_info("CSI: dwc_csi_subdev_enum_mbus_code: EXIT ret=-EINVAL (index out of range)\n");
 		return -EINVAL;
+	}
 
 	code->code = dwc_csi_formats[code->index].code;
 
+	pr_info("CSI: dwc_csi_subdev_enum_mbus_code: EXIT ret=0 code=0x%x\n", code->code);
 	return 0;
 }
 
@@ -956,12 +1074,18 @@ static int dwc_csi_subdev_set_fmt(struct v4l2_subdev *sd,
 	struct v4l2_mbus_framefmt *fmt;
 	unsigned int align;
 
+	dev_dbg(csidev->dev, "dwc_csi_subdev_set_fmt: ENTER pad=%u code=0x%x\n",
+		 sdformat->pad, sdformat->format.code);
+
 	/*
 	 * The CSIS can't transcode in any way, the source format can't be
 	 * modified.
 	 */
-	if (sdformat->pad == DWC_CSI2RX_PAD_SOURCE)
-		return v4l2_subdev_get_fmt(sd, sd_state, sdformat);
+	if (sdformat->pad == DWC_CSI2RX_PAD_SOURCE) {
+		int ret = v4l2_subdev_get_fmt(sd, sd_state, sdformat);
+		dev_dbg(csidev->dev, "dwc_csi_subdev_set_fmt: EXIT ret=%d (source pad)\n", ret);
+		return ret;
+	}
 
 	/*
 	 * Validate the media bus code and clamp and align the size.
@@ -996,8 +1120,10 @@ static int dwc_csi_subdev_set_fmt(struct v4l2_subdev *sd,
 
 	fmt = v4l2_subdev_state_get_format(sd_state, sdformat->pad,
 					   sdformat->stream);
-	if (!fmt)
+	if (!fmt) {
+		dev_dbg(csidev->dev, "dwc_csi_subdev_set_fmt: EXIT ret=-EINVAL (no fmt)\n");
 		return -EINVAL;
+	}
 
 	*fmt = sdformat->format;
 
@@ -1007,8 +1133,10 @@ static int dwc_csi_subdev_set_fmt(struct v4l2_subdev *sd,
 	/* Propagate the format from sink stream to source stream */
 	fmt = v4l2_subdev_state_get_opposite_stream_format(sd_state, sdformat->pad,
 							   sdformat->stream);
-	if (!fmt)
+	if (!fmt) {
+		dev_dbg(csidev->dev, "dwc_csi_subdev_set_fmt: EXIT ret=-EINVAL (no opposite fmt)\n");
 		return -EINVAL;
+	}
 
 	*fmt = sdformat->format;
 	/* The format on the source pad might change due to unpacking. */
@@ -1018,6 +1146,7 @@ static int dwc_csi_subdev_set_fmt(struct v4l2_subdev *sd,
 	if (sdformat->which == V4L2_SUBDEV_FORMAT_ACTIVE)
 		csidev->csi_fmt = csi_fmt;
 
+	dev_dbg(csidev->dev, "dwc_csi_subdev_set_fmt: EXIT ret=0\n");
 	return 0;
 }
 
@@ -1030,15 +1159,19 @@ static int dwc_csi_get_frame_desc(struct v4l2_subdev *sd, unsigned int pad,
 	struct v4l2_subdev_state *state;
 	int ret;
 
-	if (pad != DWC_CSI2RX_PAD_SOURCE)
+	dev_dbg(csidev->dev, "dwc_csi_get_frame_desc: ENTER pad=%u\n", pad);
+
+	if (pad != DWC_CSI2RX_PAD_SOURCE) {
+		dev_dbg(csidev->dev, "dwc_csi_get_frame_desc: EXIT ret=-EINVAL (not source pad)\n");
 		return -EINVAL;
+	}
 
 	memset(fd, 0, sizeof(*fd));
 
 	ret = v4l2_subdev_call(csidev->source_sd, pad, get_frame_desc,
 			       csidev->remote_pad, &source_fd);
 	if (ret < 0) {
-		dev_info(csidev->dev,
+		dev_dbg(csidev->dev,
 			"Remote sub-device on pad %d should implement .get_frame_desc! Forcing VC = 0 and DT = %x\n",
 			pad, csidev->csi_fmt->data_type);
 		fd->type = V4L2_MBUS_FRAME_DESC_TYPE_CSI2;
@@ -1047,6 +1180,7 @@ static int dwc_csi_get_frame_desc(struct v4l2_subdev *sd, unsigned int pad,
 		fd->entry[0].bus.csi2.vc = 0;
 		fd->entry[0].bus.csi2.dt = csidev->csi_fmt->data_type;
 
+		dev_dbg(csidev->dev, "dwc_csi_get_frame_desc: EXIT ret=0 (forced VC=0)\n");
 		return 0;
 	}
 
@@ -1087,6 +1221,7 @@ static int dwc_csi_get_frame_desc(struct v4l2_subdev *sd, unsigned int pad,
 
 out_unlock:
 	v4l2_subdev_unlock_state(state);
+	dev_dbg(csidev->dev, "dwc_csi_get_frame_desc: EXIT ret=%d num_entries=%u\n", ret, fd->num_entries);
 	return ret;
 }
 
@@ -1095,58 +1230,66 @@ static int dwc_csi_set_routing(struct v4l2_subdev *sd,
 			     enum v4l2_subdev_format_whence which,
 			     struct v4l2_subdev_krouting *routing)
 {
-	if (which == V4L2_SUBDEV_FORMAT_ACTIVE &&
-	    media_entity_is_streaming(&sd->entity))
-		return -EBUSY;
+	int ret;
 
-	return __dwc_csi_subdev_set_routing(sd, state, routing);
+	pr_info("CSI: dwc_csi_set_routing: ENTER\n");
+
+	if (which == V4L2_SUBDEV_FORMAT_ACTIVE &&
+	    media_entity_is_streaming(&sd->entity)) {
+		pr_info("CSI: dwc_csi_set_routing: EXIT ret=-EBUSY\n");
+		return -EBUSY;
+	}
+
+	ret = __dwc_csi_subdev_set_routing(sd, state, routing);
+	pr_info("CSI: dwc_csi_set_routing: EXIT ret=%d\n", ret);
+	return ret;
 }
 
 static int dwc_csi_start_stream(struct dwc_csi_device *csidev)
 {
 	int ret;
 
-	dev_info(csidev->dev, "DWC-CSI: start_stream BEGIN\n");
+	dev_dbg(csidev->dev, "DWC-CSI: start_stream BEGIN\n");
 
-	dev_info(csidev->dev, "DWC-CSI: calling device_startup\n");
+	dev_dbg(csidev->dev, "DWC-CSI: calling device_startup\n");
 	dwc_csi_device_startup(csidev);
 
-	dev_info(csidev->dev, "DWC-CSI: calling device_init\n");
+	dev_dbg(csidev->dev, "DWC-CSI: calling device_init\n");
 	ret = dwc_csi_device_init(csidev);
 	if (ret) {
 		dev_err(csidev->dev, "DWC-CSI: device_init FAILED ret=%d\n", ret);
 		return ret;
 	}
 
-	dev_info(csidev->dev, "DWC-CSI: calling ipi_config\n");
+	dev_dbg(csidev->dev, "DWC-CSI: calling ipi_config\n");
 	dwc_csi_device_ipi_config(csidev);
 
-	dev_info(csidev->dev, "DWC-CSI: calling pg_enable\n");
+	dev_dbg(csidev->dev, "DWC-CSI: calling pg_enable\n");
 	ret = dwc_csi_device_pg_enable(csidev);
 	if (ret) {
 		dev_err(csidev->dev, "DWC-CSI: pg_enable FAILED ret=%d\n", ret);
 		return ret;
 	}
 
-	dev_info(csidev->dev, "DWC-CSI: calling hs_rx_start\n");
+	dev_dbg(csidev->dev, "DWC-CSI: calling hs_rx_start\n");
 	dwc_csi_device_hs_rx_start(csidev);
 
-	dev_info(csidev->dev, "DWC-CSI: enabling interrupts\n");
+	dev_dbg(csidev->dev, "DWC-CSI: enabling interrupts\n");
 	dwc_csi_device_enable_interrupts(csidev, true);
 
-	dev_info(csidev->dev, "DWC-CSI: start_stream SUCCESS\n");
+	dev_dbg(csidev->dev, "DWC-CSI: start_stream SUCCESS\n");
 
 	/* Read and print DPHY status for debugging */
 	{
 		u32 dphy_status = dwc_csi_read(csidev, CSI2RX_DPHY_RX_STATUS);
-		dev_info(csidev->dev, "DPHY_RX_STATUS = 0x%08X\n", dphy_status);
-		dev_info(csidev->dev, "  CLK_LANE_HS: %s\n",
+		dev_dbg(csidev->dev, "DPHY_RX_STATUS = 0x%08X\n", dphy_status);
+		dev_dbg(csidev->dev, "  CLK_LANE_HS: %s\n",
 			 (dphy_status & CSI2RX_DPHY_RX_STATUS_CLK_LANE_HS) ? "YES" : "NO");
-		dev_info(csidev->dev, "  CLK_LANE_ULP: %s\n",
+		dev_dbg(csidev->dev, "  CLK_LANE_ULP: %s\n",
 			 (dphy_status & CSI2RX_DPHY_RX_STATUS_CLK_LANE_ULP) ? "YES" : "NO");
-		dev_info(csidev->dev, "  DATA_LANE0_ULP: %s\n",
+		dev_dbg(csidev->dev, "  DATA_LANE0_ULP: %s\n",
 			 (dphy_status & CSI2RX_DPHY_RX_STATUS_DATA_LANE0_ULP) ? "YES" : "NO");
-		dev_info(csidev->dev, "  DATA_LANE1_ULP: %s\n",
+		dev_dbg(csidev->dev, "  DATA_LANE1_ULP: %s\n",
 			 (dphy_status & CSI2RX_DPHY_RX_STATUS_DATA_LANE1_ULP) ? "YES" : "NO");
 	}
 
@@ -1155,9 +1298,11 @@ static int dwc_csi_start_stream(struct dwc_csi_device *csidev)
 
 static void dwc_csi_stop_stream(struct dwc_csi_device *csidev)
 {
+	dev_dbg(csidev->dev, "dwc_csi_stop_stream: ENTER\n");
 	dwc_csi_device_enable_interrupts(csidev, false);
 	dwc_csi_device_hs_rx_stop(csidev);
 	dwc_csi_device_pg_disable(csidev);
+	dev_dbg(csidev->dev, "dwc_csi_stop_stream: EXIT\n");
 }
 
 
@@ -1169,22 +1314,24 @@ static int dwc_csi_enable_streams(struct v4l2_subdev *sd,
 	u64 sink_streams;
 	int ret;
 
-	dev_info(csidev->dev, "DWC-CSI: enable_streams BEGIN, pad=%u, streams_mask=0x%llx\n",
+	dev_dbg(csidev->dev, "DWC-CSI: enable_streams BEGIN, pad=%u, streams_mask=0x%llx\n",
 		 pad, streams_mask);
 
 	if (!csidev->source_sd) {
 		dev_err(csidev->dev, "DWC-CSI: Sensor not linked with CSIS pad\n");
+		dev_dbg(csidev->dev, "dwc_csi_enable_streams: EXIT ret=-EPIPE\n");
 		return -EPIPE;
 	}
 
-	dev_info(csidev->dev, "DWC-CSI: source_sd=%s, enabled_streams=0x%llx\n",
+	dev_dbg(csidev->dev, "DWC-CSI: source_sd=%s, enabled_streams=0x%llx\n",
 		 csidev->source_sd->name, csidev->enabled_streams);
 
 	if (!csidev->enabled_streams) {
-		dev_info(csidev->dev, "DWC-CSI: First stream, starting CSI hardware\n");
+		dev_dbg(csidev->dev, "DWC-CSI: First stream, starting CSI hardware\n");
 		ret = pm_runtime_resume_and_get(csidev->dev);
 		if (ret < 0) {
 			dev_err(csidev->dev, "DWC-CSI: pm_runtime_resume FAILED ret=%d\n", ret);
+			dev_dbg(csidev->dev, "dwc_csi_enable_streams: EXIT ret=%d\n", ret);
 			return ret;
 		}
 
@@ -1210,24 +1357,27 @@ static int dwc_csi_enable_streams(struct v4l2_subdev *sd,
 						       DWC_CSI2RX_PAD_SINK,
 						       &streams_mask);
 
-	dev_info(csidev->dev, "DWC-CSI: Enabling source subdev streams, remote_sd=%s, remote_pad=%u, sink_streams=0x%llx\n",
+	dev_dbg(csidev->dev, "DWC-CSI: Enabling source subdev streams, remote_sd=%s, remote_pad=%u, sink_streams=0x%llx\n",
 		csidev->source_sd->name, csidev->remote_pad, sink_streams);
 
 	ret = v4l2_subdev_enable_streams(csidev->source_sd, csidev->remote_pad,
 					 sink_streams);
 	if (ret) {
 		dev_err(csidev->dev, "DWC-CSI: v4l2_subdev_enable_streams FAILED ret=%d\n", ret);
+		dev_dbg(csidev->dev, "dwc_csi_enable_streams: EXIT ret=%d\n", ret);
 		return ret;
 	}
 
 	csidev->enabled_streams |= streams_mask;
-	dev_info(csidev->dev, "DWC-CSI: enable_streams SUCCESS, enabled_streams=0x%llx\n",
+	dev_dbg(csidev->dev, "DWC-CSI: enable_streams SUCCESS, enabled_streams=0x%llx\n",
 		 csidev->enabled_streams);
 
+	dev_dbg(csidev->dev, "dwc_csi_enable_streams: EXIT ret=0\n");
 	return 0;
 
 err_runtime_put:
 	pm_runtime_put(csidev->dev);
+	dev_dbg(csidev->dev, "dwc_csi_enable_streams: EXIT ret=%d (runtime_put)\n", ret);
 	return ret;
 }
 
@@ -1239,14 +1389,19 @@ static int dwc_csi_disable_streams(struct v4l2_subdev *sd,
 	u64 sink_streams;
 	int ret;
 
+	dev_dbg(csidev->dev, "dwc_csi_disable_streams: ENTER pad=%u streams_mask=0x%llx\n",
+		 pad, streams_mask);
+
 	sink_streams = v4l2_subdev_state_xlate_streams(state, DWC_CSI2RX_PAD_SOURCE,
 						       DWC_CSI2RX_PAD_SINK,
 						       &streams_mask);
 
 	ret = v4l2_subdev_disable_streams(csidev->source_sd, csidev->remote_pad,
 					  sink_streams);
-	if (ret)
+	if (ret) {
+		dev_dbg(csidev->dev, "dwc_csi_disable_streams: EXIT ret=%d\n", ret);
 		return ret;
+	}
 
 	csidev->enabled_streams &= ~streams_mask;
 
@@ -1256,6 +1411,7 @@ static int dwc_csi_disable_streams(struct v4l2_subdev *sd,
 		pm_runtime_put(csidev->dev);
 	}
 
+	dev_dbg(csidev->dev, "dwc_csi_disable_streams: EXIT ret=0\n");
 	return 0;
 }
 
@@ -1263,7 +1419,9 @@ static int dwc_csi_subdev_log_status(struct v4l2_subdev *sd)
 {
 	struct dwc_csi_device *csidev = sd_to_dwc_csi_device(sd);
 
+	dev_dbg(csidev->dev, "dwc_csi_subdev_log_status: ENTER\n");
 	dwc_csi_log_counters(csidev);
+	dev_dbg(csidev->dev, "dwc_csi_subdev_log_status: EXIT ret=0\n");
 	return 0;
 }
 
@@ -1304,18 +1462,23 @@ static int dwc_csi_link_setup(struct media_entity *entity,
 	struct dwc_csi_device *csidev = sd_to_dwc_csi_device(sd);
 	struct v4l2_subdev *remote_sd;
 
+	dev_dbg(csidev->dev, "dwc_csi_link_setup: ENTER\n");
 	dev_dbg(csidev->dev, "link setup %s -> %s", remote_pad->entity->name,
 		local_pad->entity->name);
 
 	/* We only care about the link to the source. */
-	if (!(local_pad->flags & MEDIA_PAD_FL_SINK))
+	if (!(local_pad->flags & MEDIA_PAD_FL_SINK)) {
+		dev_dbg(csidev->dev, "dwc_csi_link_setup: EXIT ret=0 (not sink)\n");
 		return 0;
+	}
 
 	remote_sd = media_entity_to_v4l2_subdev(remote_pad->entity);
 
 	if (flags & MEDIA_LNK_FL_ENABLED) {
-		if (csidev->source_sd)
+		if (csidev->source_sd) {
+			dev_dbg(csidev->dev, "dwc_csi_link_setup: EXIT ret=-EBUSY\n");
 			return -EBUSY;
+		}
 
 		csidev->source_sd = remote_sd;
 		csidev->remote_pad = remote_pad->index;
@@ -1323,6 +1486,7 @@ static int dwc_csi_link_setup(struct media_entity *entity,
 		csidev->source_sd = NULL;
 	}
 
+	dev_dbg(csidev->dev, "dwc_csi_link_setup: EXIT ret=0\n");
 	return 0;
 }
 
@@ -1331,10 +1495,12 @@ static int dwc_csi_link_validate(struct media_link *link)
 	struct media_pad *sink_pad = link->sink;
 	struct v4l2_subdev *sink_sd;
 	struct dwc_csi_device *csidev;
+	int ret;
 
 	sink_sd = media_entity_to_v4l2_subdev(sink_pad->entity);
 	csidev = sd_to_dwc_csi_device(sink_sd);
 
+	dev_dbg(csidev->dev, "dwc_csi_link_validate: ENTER\n");
 	dev_dbg(csidev->dev, "entity name:%s pad index=%d\n",
 			   sink_sd->name, sink_pad->index);
 
@@ -1342,10 +1508,14 @@ static int dwc_csi_link_validate(struct media_link *link)
 	 * Skip link validate when pattern enabled since the soruce
 	 * data will be from CSI pattern generator, not sensor.
 	 */
-	if (csidev->pg_enable && sink_pad->index == DWC_CSI2RX_PAD_SINK)
+	if (csidev->pg_enable && sink_pad->index == DWC_CSI2RX_PAD_SINK) {
+		dev_dbg(csidev->dev, "dwc_csi_link_validate: EXIT ret=0 (pg_enable skip)\n");
 		return 0;
+	}
 
-	return v4l2_subdev_link_validate(link);
+	ret = v4l2_subdev_link_validate(link);
+	dev_dbg(csidev->dev, "dwc_csi_link_validate: EXIT ret=%d\n", ret);
+	return ret;
 }
 
 static const struct media_entity_operations dwc_csi_entity_ops = {
@@ -1370,8 +1540,12 @@ static int dwc_csi_notify_bound(struct v4l2_async_notifier *notifier,
 {
 	struct dwc_csi_device *csidev = notifier_to_dwc_csi_device(notifier);
 	struct media_pad *sink = &csidev->sd.entity.pads[DWC_CSI2RX_PAD_SINK];
+	int ret;
 
-	return v4l2_create_fwnode_links_to_pad(sd, sink, 0);
+	dev_dbg(csidev->dev, "dwc_csi_notify_bound: ENTER sd=%s\n", sd->name);
+	ret = v4l2_create_fwnode_links_to_pad(sd, sink, 0);
+	dev_dbg(csidev->dev, "dwc_csi_notify_bound: EXIT ret=%d\n", ret);
+	return ret;
 }
 
 static const struct v4l2_async_notifier_operations dwc_csi_notify_ops = {
@@ -1388,12 +1562,16 @@ static int dwc_csi_async_register(struct dwc_csi_device *csidev)
 	unsigned int i;
 	int ret;
 
+	dev_dbg(csidev->dev, "dwc_csi_async_register: ENTER\n");
+
 	v4l2_async_subdev_nf_init(&csidev->notifier, &csidev->sd);
 
 	ep = fwnode_graph_get_endpoint_by_id(dev_fwnode(csidev->dev), 0, 0,
 					     FWNODE_GRAPH_ENDPOINT_NEXT);
-	if (!ep)
+	if (!ep) {
+		dev_dbg(csidev->dev, "dwc_csi_async_register: EXIT ret=-ENOTCONN\n");
 		return -ENOTCONN;
+	}
 
 	ret = v4l2_fwnode_endpoint_parse(ep, &vep);
 	if (ret)
@@ -1432,6 +1610,7 @@ static int dwc_csi_async_register(struct dwc_csi_device *csidev)
 	if (ret)
 		goto err_unreg_notifier;
 
+	dev_dbg(csidev->dev, "dwc_csi_async_register: EXIT ret=0\n");
 	return ret;
 
 err_unreg_notifier:
@@ -1440,6 +1619,7 @@ err_notifier_clean:
 	v4l2_async_nf_cleanup(&csidev->notifier);
 err_parse:
 	fwnode_handle_put(ep);
+	dev_dbg(csidev->dev, "dwc_csi_async_register: EXIT ret=%d\n", ret);
 	return ret;
 }
 
@@ -1463,6 +1643,8 @@ static int dwc_csi_s_ctrl(struct v4l2_ctrl *ctrl)
 	struct dwc_csi_device *csidev  = ctrl_to_csidev(ctrl);
 	int ret = 0;
 
+	dev_dbg(csidev->dev, "dwc_csi_s_ctrl: ENTER ctrl_id=0x%x val=%d\n", ctrl->id, ctrl->val);
+
 	switch (ctrl->id) {
 	case V4L2_CID_TEST_PATTERN:
 		/* Pattern index start from 0 */
@@ -1474,6 +1656,7 @@ static int dwc_csi_s_ctrl(struct v4l2_ctrl *ctrl)
 		break;
 	}
 
+	dev_dbg(csidev->dev, "dwc_csi_s_ctrl: EXIT ret=%d\n", ret);
 	return ret;
 }
 
@@ -1485,6 +1668,8 @@ static int dwc_csi_controls_init(struct dwc_csi_device *csidev)
 {
 	struct v4l2_ctrl_handler *handler = &csidev->ctrl_handler;
 	int ret;
+
+	dev_dbg(csidev->dev, "dwc_csi_controls_init: ENTER\n");
 
 	v4l2_ctrl_handler_init(handler, 1);
 
@@ -1499,16 +1684,20 @@ static int dwc_csi_controls_init(struct dwc_csi_device *csidev)
 	if (handler->error) {
 		ret = handler->error;
 		v4l2_ctrl_handler_free(handler);
+		dev_dbg(csidev->dev, "dwc_csi_controls_init: EXIT ret=%d\n", ret);
 		return ret;
 	}
 
 	csidev->sd.ctrl_handler = handler;
+	dev_dbg(csidev->dev, "dwc_csi_controls_init: EXIT ret=0\n");
 	return 0;
 }
 
 static void dwc_csi_controls_cleanup(struct dwc_csi_device *csidev)
 {
+	dev_dbg(csidev->dev, "dwc_csi_controls_cleanup: ENTER\n");
 	v4l2_ctrl_handler_free(&csidev->ctrl_handler);
+	dev_dbg(csidev->dev, "dwc_csi_controls_cleanup: EXIT\n");
 }
 
 /* -----------------------------------------------------------------------------
@@ -1517,19 +1706,28 @@ static void dwc_csi_controls_cleanup(struct dwc_csi_device *csidev)
 
 static int dwc_csi_system_suspend(struct device *dev)
 {
-	return pm_runtime_force_suspend(dev);
+	int ret;
+
+	dev_dbg(dev, "dwc_csi_system_suspend: ENTER\n");
+	ret = pm_runtime_force_suspend(dev);
+	dev_dbg(dev, "dwc_csi_system_suspend: EXIT ret=%d\n", ret);
+	return ret;
 }
 
 static int dwc_csi_system_resume(struct device *dev)
 {
 	int ret;
 
+	dev_dbg(dev, "dwc_csi_system_resume: ENTER\n");
+
 	ret = pm_runtime_force_resume(dev);
 	if (ret < 0) {
 		dev_err(dev, "force resume %s failed!\n", dev_name(dev));
+		dev_dbg(dev, "dwc_csi_system_resume: EXIT ret=%d\n", ret);
 		return ret;
 	}
 
+	dev_dbg(dev, "dwc_csi_system_resume: EXIT ret=0\n");
 	return 0;
 }
 
@@ -1538,8 +1736,9 @@ static int dwc_csi_runtime_suspend(struct device *dev)
 	struct v4l2_subdev *sd = dev_get_drvdata(dev);
 	struct dwc_csi_device *csidev = sd_to_dwc_csi_device(sd);
 
+	dev_dbg(dev, "dwc_csi_runtime_suspend: ENTER\n");
 	dwc_csi_clk_disable(csidev);
-
+	dev_dbg(dev, "dwc_csi_runtime_suspend: EXIT ret=0\n");
 	return 0;
 }
 
@@ -1549,10 +1748,15 @@ static int dwc_csi_runtime_resume(struct device *dev)
 	struct dwc_csi_device *csidev = sd_to_dwc_csi_device(sd);
 	int ret;
 
-	ret = dwc_csi_clk_enable(csidev);
-	if (ret < 0)
-		return ret;
+	dev_dbg(dev, "dwc_csi_runtime_resume: ENTER\n");
 
+	ret = dwc_csi_clk_enable(csidev);
+	if (ret < 0) {
+		dev_dbg(dev, "dwc_csi_runtime_resume: EXIT ret=%d\n", ret);
+		return ret;
+	}
+
+	dev_dbg(dev, "dwc_csi_runtime_resume: EXIT ret=0\n");
 	return 0;
 }
 
@@ -1604,6 +1808,8 @@ static int dwc_csi_subdev_init(struct dwc_csi_device *csidev)
 	struct v4l2_subdev *sd = &csidev->sd;
 	int ret;
 
+	dev_dbg(csidev->dev, "dwc_csi_subdev_init: ENTER\n");
+
 	v4l2_subdev_init(sd, &dwc_csi_subdev_ops);
 	sd->owner = THIS_MODULE;
 	snprintf(sd->name, sizeof(sd->name), "csidev-%s", dev_name(csidev->dev));
@@ -1623,6 +1829,7 @@ static int dwc_csi_subdev_init(struct dwc_csi_device *csidev)
 				     csidev->pads);
 	if (ret) {
 		dev_err(csidev->dev, "Failed to init pads\n");
+		dev_dbg(csidev->dev, "dwc_csi_subdev_init: EXIT ret=%d\n", ret);
 		return ret;
 	}
 
@@ -1630,6 +1837,7 @@ static int dwc_csi_subdev_init(struct dwc_csi_device *csidev)
 	if (ret)
 		media_entity_cleanup(&sd->entity);
 
+	dev_dbg(csidev->dev, "dwc_csi_subdev_init: EXIT ret=%d\n", ret);
 	return ret;
 }
 
@@ -1684,9 +1892,13 @@ static int dwc_csi_device_probe(struct platform_device *pdev)
 	int irq;
 	int ret;
 
+	dev_dbg(dev, "dwc_csi_device_probe: ENTER\n");
+
 	csidev = devm_kzalloc(dev, sizeof(*csidev), GFP_KERNEL);
-	if (!csidev)
+	if (!csidev) {
+		dev_dbg(dev, "dwc_csi_device_probe: EXIT ret=-ENOMEM\n");
 		return -ENOMEM;
+	}
 
 	mutex_init(&csidev->lock);
 	spin_lock_init(&csidev->slock);
@@ -1697,17 +1909,21 @@ static int dwc_csi_device_probe(struct platform_device *pdev)
 	csidev->regs = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(csidev->regs)) {
 		dev_err(dev, "Failed to get DWC csi2 register map\n");
+		dev_dbg(dev, "dwc_csi_device_probe: EXIT ret=%ld\n", PTR_ERR(csidev->regs));
 		return PTR_ERR(csidev->regs);
 	}
 
 	csidev->phy = devm_phy_get(dev, "dphy-rx");
-	if (IS_ERR(csidev->phy))
+	if (IS_ERR(csidev->phy)) {
+		dev_dbg(dev, "dwc_csi_device_probe: EXIT ret=%ld (phy)\n", PTR_ERR(csidev->phy));
 		return dev_err_probe(dev, PTR_ERR(csidev->phy),
 				     "Failed to get DPHY Rx\n");
+	}
 
 	irq = platform_get_irq(pdev, 0);
 	if (irq < 0) {
 		dev_err(dev, "Failed to get IRQ (%d)\n", irq);
+		dev_dbg(dev, "dwc_csi_device_probe: EXIT ret=%d (irq)\n", irq);
 		return irq;
 	}
 
@@ -1715,12 +1931,14 @@ static int dwc_csi_device_probe(struct platform_device *pdev)
 			       dev_name(dev), csidev);
 	if (ret < 0) {
 		dev_err(dev, "Failed to request IRQ (%d)\n", ret);
+		dev_dbg(dev, "dwc_csi_device_probe: EXIT ret=%d (request_irq)\n", ret);
 		return ret;
 	}
 
 	ret = dwc_csi_clk_get(csidev);
 	if (ret < 0) {
 		dev_err(dev, "Failed to get clocks\n");
+		dev_dbg(dev, "dwc_csi_device_probe: EXIT ret=%d (clk_get)\n", ret);
 		return ret;
 	}
 
@@ -1729,6 +1947,7 @@ static int dwc_csi_device_probe(struct platform_device *pdev)
 	ret = dwc_csi_subdev_init(csidev);
 	if (ret < 0) {
 		dev_err(dev, "Failed to initialize subdev\n");
+		dev_dbg(dev, "dwc_csi_device_probe: EXIT ret=%d (subdev_init)\n", ret);
 		return ret;
 	}
 
@@ -1755,6 +1974,7 @@ static int dwc_csi_device_probe(struct platform_device *pdev)
 				    csidev, &dwc_csi_debugfs_status_fops);
 	}
 
+	dev_dbg(dev, "dwc_csi_device_probe: EXIT ret=0\n");
 	return 0;
 
 err_ctl_cleanup:
@@ -1763,6 +1983,7 @@ err_ent_cleanup:
 	v4l2_subdev_cleanup(&csidev->sd);
 	media_entity_cleanup(&csidev->sd.entity);
 
+	dev_dbg(dev, "dwc_csi_device_probe: EXIT ret=%d\n", ret);
 	return ret;
 }
 
@@ -1770,6 +1991,8 @@ static void dwc_csi_device_remove(struct platform_device *pdev)
 {
 	struct v4l2_subdev *sd = platform_get_drvdata(pdev);
 	struct dwc_csi_device *csidev = sd_to_dwc_csi_device(sd);
+
+	dev_dbg(&pdev->dev, "dwc_csi_device_remove: ENTER\n");
 
 	debugfs_remove_recursive(csidev->debugfs_dir);
 
@@ -1786,6 +2009,8 @@ static void dwc_csi_device_remove(struct platform_device *pdev)
 	mutex_destroy(&csidev->lock);
 
 	pm_runtime_set_suspended(&pdev->dev);
+
+	dev_dbg(&pdev->dev, "dwc_csi_device_remove: EXIT\n");
 }
 
 static const struct of_device_id dwc_csi_device_of_match[] = {

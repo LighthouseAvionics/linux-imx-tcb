@@ -27,7 +27,7 @@
 
 /* Chip ID */
 #define IMX412_REG_ID		0x0016
-#define IMX412_ID		0x577
+#define IMX412_ID		0x0477
 
 /* Exposure control */
 #define IMX412_REG_EXPOSURE_CIT	0x0202
@@ -797,34 +797,66 @@ static int imx412_start_streaming(struct imx412 *imx412)
 {
 	const struct imx412_reg_list *reg_list;
 	int ret;
+	u32 val;
+
+	dev_info(imx412->dev, "IMX477: start_streaming BEGIN mode=%ux%u\n",
+		 imx412->cur_mode->width, imx412->cur_mode->height);
 
 	/* Write sensor mode registers */
 	reg_list = &imx412->cur_mode->reg_list;
+	dev_info(imx412->dev, "IMX477: writing %u mode registers\n",
+		 reg_list->num_of_regs);
 	ret = imx412_write_regs(imx412, reg_list->regs,
 				reg_list->num_of_regs);
 	if (ret) {
-		dev_err(imx412->dev, "fail to write initial registers\n");
+		dev_err(imx412->dev, "IMX477: FAIL writing initial registers ret=%d\n", ret);
 		return ret;
 	}
+
+	/* Read back critical registers */
+	imx412_read_reg(imx412, 0x0114, 1, &val);
+	dev_info(imx412->dev, "IMX477: CSI_LANE_MODE(0x0114)=0x%02x (%s)\n",
+		 val, val == 0x03 ? "4-lane" : val == 0x01 ? "2-lane" : "unknown");
+	imx412_read_reg(imx412, 0x0112, 1, &val);
+	dev_info(imx412->dev, "IMX477: CSI_DT_FMT_H(0x0112)=0x%02x\n", val);
+	imx412_read_reg(imx412, 0x0340, 2, &val);
+	dev_info(imx412->dev, "IMX477: FRM_LENGTH(0x0340)=%u lines\n", val);
+	imx412_read_reg(imx412, 0x0342, 2, &val);
+	dev_info(imx412->dev, "IMX477: LINE_LENGTH(0x0342)=%u pclk\n", val);
+	imx412_read_reg(imx412, 0x034C, 2, &val);
+	dev_info(imx412->dev, "IMX477: X_OUTPUT_SIZE(0x034C)=%u\n", val);
+	imx412_read_reg(imx412, 0x034E, 2, &val);
+	dev_info(imx412->dev, "IMX477: Y_OUTPUT_SIZE(0x034E)=%u\n", val);
+	imx412_read_reg(imx412, 0x0820, 2, &val);
+	dev_info(imx412->dev, "IMX477: REQ_LINK_BIT_RATE[31:16](0x0820)=0x%04x\n", val);
+	imx412_read_reg(imx412, 0x0822, 2, &val);
+	dev_info(imx412->dev, "IMX477: REQ_LINK_BIT_RATE[15:0](0x0822)=0x%04x\n", val);
 
 	/* Setup handler will write actual exposure and gain */
 	ret =  __v4l2_ctrl_handler_setup(imx412->sd.ctrl_handler);
 	if (ret) {
-		dev_err(imx412->dev, "fail to setup handler\n");
+		dev_err(imx412->dev, "IMX477: FAIL ctrl_handler_setup ret=%d\n", ret);
 		return ret;
 	}
 
 	/* Delay is required before streaming*/
+	dev_info(imx412->dev, "IMX477: waiting 7.4ms before stream on\n");
 	usleep_range(7400, 8000);
 
 	/* Start streaming */
+	dev_info(imx412->dev, "IMX477: writing MODE_SELECT=0x01 (streaming)\n");
 	ret = imx412_write_reg(imx412, IMX412_REG_MODE_SELECT,
 			       1, IMX412_MODE_STREAMING);
 	if (ret) {
-		dev_err(imx412->dev, "fail to start streaming\n");
+		dev_err(imx412->dev, "IMX477: FAIL to start streaming ret=%d\n", ret);
 		return ret;
 	}
 
+	/* Verify streaming started */
+	imx412_read_reg(imx412, IMX412_REG_MODE_SELECT, 1, &val);
+	dev_info(imx412->dev, "IMX477: MODE_SELECT readback=0x%02x (expect 0x01)\n", val);
+
+	dev_info(imx412->dev, "IMX477: start_streaming DONE\n");
 	return 0;
 }
 
@@ -1280,6 +1312,7 @@ static const struct dev_pm_ops imx412_pm_ops = {
 
 static const struct of_device_id imx412_of_match[] = {
 	{ .compatible = "sony,imx412", .data = "imx412" },
+	{ .compatible = "sony,imx477", .data = "imx477" },
 	{ .compatible = "sony,imx577", .data = "imx577" },
 	{ }
 };

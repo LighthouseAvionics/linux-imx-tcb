@@ -245,16 +245,24 @@ static int __formatter_subdev_set_routing(struct v4l2_subdev *sd,
 {
 	int ret;
 
-	if (routing->num_routes > V4L2_FRAME_DESC_ENTRY_MAX)
+	pr_info("CSI: __formatter_subdev_set_routing: ENTER\n");
+
+	if (routing->num_routes > V4L2_FRAME_DESC_ENTRY_MAX) {
+		pr_info("CSI: __formatter_subdev_set_routing: EXIT ret=-EINVAL (too many routes)\n");
 		return -EINVAL;
+	}
 
 	ret = v4l2_subdev_routing_validate(sd, routing,
 					   V4L2_SUBDEV_ROUTING_ONLY_1_TO_1);
-	if (ret)
+	if (ret) {
+		pr_info("CSI: __formatter_subdev_set_routing: EXIT ret=%d (validate failed)\n", ret);
 		return ret;
+	}
 
-	return v4l2_subdev_set_routing_with_fmt(sd, state, routing,
+	ret = v4l2_subdev_set_routing_with_fmt(sd, state, routing,
 						&formatter_default_fmt);
+	pr_info("CSI: __formatter_subdev_set_routing: EXIT ret=%d\n", ret);
+	return ret;
 }
 static int formatter_subdev_init_state(struct v4l2_subdev *sd,
 				       struct v4l2_subdev_state *sd_state)
@@ -273,31 +281,44 @@ static int formatter_subdev_init_state(struct v4l2_subdev *sd,
 		.num_routes = ARRAY_SIZE(routes),
 		.routes = routes,
 	};
+	int ret;
 
-	return __formatter_subdev_set_routing(sd, sd_state, &routing);;
+	pr_info("CSI: formatter_subdev_init_state: ENTER\n");
+	ret = __formatter_subdev_set_routing(sd, sd_state, &routing);
+	pr_info("CSI: formatter_subdev_init_state: EXIT ret=%d\n", ret);
+	return ret;
 }
 
 static int formatter_subdev_enum_mbus_code(struct v4l2_subdev *sd,
 					   struct v4l2_subdev_state *sd_state,
 					   struct v4l2_subdev_mbus_code_enum *code)
 {
+	pr_info("CSI: formatter_subdev_enum_mbus_code: ENTER pad=%u index=%u\n",
+		code->pad, code->index);
+
 	if (code->pad == CSI_FORMATTER_PAD_SOURCE) {
 		struct v4l2_mbus_framefmt *fmt;
 
-		if (code->index > 0)
+		if (code->index > 0) {
+			pr_info("CSI: formatter_subdev_enum_mbus_code: EXIT ret=-EINVAL (source index>0)\n");
 			return -EINVAL;
+		}
 
 		fmt = v4l2_subdev_state_get_format(sd_state, code->pad,
 						   code->stream);
 		code->code = fmt->code;
+		pr_info("CSI: formatter_subdev_enum_mbus_code: EXIT ret=0 code=0x%x\n", code->code);
 		return 0;
 	}
 
-	if (code->index >= ARRAY_SIZE(formats))
+	if (code->index >= ARRAY_SIZE(formats)) {
+		pr_info("CSI: formatter_subdev_enum_mbus_code: EXIT ret=-EINVAL (index out of range)\n");
 		return -EINVAL;
+	}
 
 	code->code = formats[code->index].code;
 
+	pr_info("CSI: formatter_subdev_enum_mbus_code: EXIT ret=0 code=0x%x\n", code->code);
 	return 0;
 }
 
@@ -309,8 +330,14 @@ static int formatter_subdev_set_fmt(struct v4l2_subdev *sd,
 	struct formatter_pix_format const *format;
 	struct v4l2_mbus_framefmt *fmt;
 
-	if (sdformat->pad == CSI_FORMATTER_PAD_SOURCE)
-		return v4l2_subdev_get_fmt(sd, sd_state, sdformat);
+	dev_dbg(formatter->dev, "formatter_subdev_set_fmt: ENTER pad=%u code=0x%x\n",
+		 sdformat->pad, sdformat->format.code);
+
+	if (sdformat->pad == CSI_FORMATTER_PAD_SOURCE) {
+		int ret = v4l2_subdev_get_fmt(sd, sd_state, sdformat);
+		dev_dbg(formatter->dev, "formatter_subdev_set_fmt: EXIT ret=%d (source pad)\n", ret);
+		return ret;
+	}
 
 	/*
 	 * Validate the media bus code and clamp and align the size.
@@ -336,8 +363,10 @@ static int formatter_subdev_set_fmt(struct v4l2_subdev *sd,
 	/* Propagate the format from sink stream to source stream */
 	fmt = v4l2_subdev_state_get_opposite_stream_format(sd_state, sdformat->pad,
 							   sdformat->stream);
-	if (!fmt)
+	if (!fmt) {
+		dev_dbg(formatter->dev, "formatter_subdev_set_fmt: EXIT ret=-EINVAL (no opposite fmt)\n");
 		return -EINVAL;
+	}
 
 	*fmt = sdformat->format;
 
@@ -345,6 +374,7 @@ static int formatter_subdev_set_fmt(struct v4l2_subdev *sd,
 	if (sdformat->which == V4L2_SUBDEV_FORMAT_ACTIVE)
 		formatter->fmt = format;
 
+	dev_dbg(formatter->dev, "formatter_subdev_set_fmt: EXIT ret=0\n");
 	return 0;
 }
 
@@ -358,13 +388,19 @@ static int formatter_subdev_get_frame_desc(struct v4l2_subdev *sd,
 	struct v4l2_subdev_state *state;
 	int ret;
 
-	if (pad != CSI_FORMATTER_PAD_SOURCE)
+	dev_dbg(formatter->dev, "formatter_subdev_get_frame_desc: ENTER pad=%u\n", pad);
+
+	if (pad != CSI_FORMATTER_PAD_SOURCE) {
+		dev_dbg(formatter->dev, "formatter_subdev_get_frame_desc: EXIT ret=-EINVAL (not source pad)\n");
 		return -EINVAL;
+	}
 
 	ret = v4l2_subdev_call(formatter->csi_sd, pad, get_frame_desc,
 			       formatter->remote_pad, &csi_fd);
-	if (ret)
+	if (ret) {
+		dev_dbg(formatter->dev, "formatter_subdev_get_frame_desc: EXIT ret=%d (get_frame_desc failed)\n", ret);
 		return ret;
+	}
 
 	if (csi_fd.type != V4L2_MBUS_FRAME_DESC_TYPE_CSI2) {
 		dev_err(formatter->dev,
@@ -411,6 +447,7 @@ static int formatter_subdev_get_frame_desc(struct v4l2_subdev *sd,
 
 out_unlock:
 	v4l2_subdev_unlock_state(state);
+	dev_dbg(formatter->dev, "formatter_subdev_get_frame_desc: EXIT ret=%d num_entries=%u\n", ret, fd->num_entries);
 	return ret;
 }
 
@@ -419,11 +456,19 @@ static int formatter_subdev_set_routing(struct v4l2_subdev *sd,
 					enum v4l2_subdev_format_whence which,
 					struct v4l2_subdev_krouting *routing)
 {
-	if (which == V4L2_SUBDEV_FORMAT_ACTIVE &&
-	    media_entity_is_streaming(&sd->entity))
-		return -EBUSY;
+	int ret;
 
-	return __formatter_subdev_set_routing(sd, state, routing);
+	pr_info("CSI: formatter_subdev_set_routing: ENTER\n");
+
+	if (which == V4L2_SUBDEV_FORMAT_ACTIVE &&
+	    media_entity_is_streaming(&sd->entity)) {
+		pr_info("CSI: formatter_subdev_set_routing: EXIT ret=-EBUSY\n");
+		return -EBUSY;
+	}
+
+	ret = __formatter_subdev_set_routing(sd, state, routing);
+	pr_info("CSI: formatter_subdev_set_routing: EXIT ret=%d\n", ret);
+	return ret;
 }
 
 static inline void formatter_write(struct csi_formatter *formatter,
@@ -456,14 +501,19 @@ static u8 get_vc(struct csi_formatter *formatter, unsigned int stream)
 	unsigned int i;
 	int ret;
 
+	dev_dbg(formatter->dev, "get_vc: ENTER stream=%u\n", stream);
+
 	/*
 	 * Return virtual channel 0 as default value when remote subdev
 	 * don't implement .get_frame_desc subdev callback
 	 */
 	ret = v4l2_subdev_call(formatter->csi_sd, pad, get_frame_desc,
 			       formatter->remote_pad, &source_fd);
-	if (ret < 0)
-		return (ret == -ENOIOCTLCMD) ? 0 : ret;
+	if (ret < 0) {
+		u8 vc_val = (ret == -ENOIOCTLCMD) ? 0 : ret;
+		dev_dbg(formatter->dev, "get_vc: EXIT ret=%u (get_frame_desc returned %d)\n", vc_val, ret);
+		return vc_val;
+	}
 
 	for (i = 0; i < source_fd.num_entries; ++i) {
 		if (source_fd.entry[i].stream == stream) {
@@ -475,9 +525,11 @@ static u8 get_vc(struct csi_formatter *formatter, unsigned int stream)
 	if (!entry) {
 		dev_err(formatter->dev,
 			"Can't find valid frame desc corresponding to stream %d\n", stream);
+		dev_dbg(formatter->dev, "get_vc: EXIT ret=-EPIPE\n");
 		return -EPIPE;
 	}
 
+	dev_dbg(formatter->dev, "get_vc: EXIT vc=%u\n", entry->bus.csi2.vc);
 	return entry->bus.csi2.vc;
 }
 
@@ -489,6 +541,8 @@ static int csi_formatter_start_stream(struct csi_formatter *formatter,
 	u32 val;
 	u8 vc;
 
+	dev_dbg(formatter->dev, "csi_formatter_start_stream: ENTER stream_mask=0x%llx\n", stream_mask);
+
 	for (i = 0; i < V4L2_FRAME_DESC_ENTRY_MAX; ++i) {
 		if (stream_mask & BIT(i))
 			break;
@@ -496,6 +550,7 @@ static int csi_formatter_start_stream(struct csi_formatter *formatter,
 
 	if (i == V4L2_FRAME_DESC_ENTRY_MAX) {
 		dev_err(formatter->dev, "Stream ID out of range\n");
+		dev_dbg(formatter->dev, "csi_formatter_start_stream: EXIT ret=-EINVAL\n");
 		return -EINVAL;
 	}
 
@@ -504,11 +559,13 @@ static int csi_formatter_start_stream(struct csi_formatter *formatter,
 
 	if (vc < 0 || vc > CSI_FORMATTER_VC_MAX) {
 		dev_err(formatter->dev, "Invalid virtual channel(%d)\n", vc);
+		dev_dbg(formatter->dev, "csi_formatter_start_stream: EXIT ret=-EINVAL (bad vc)\n");
 		return -EINVAL;
 	}
 
 	formatter_write(formatter, CSI_VCx_PIXEL_DATA_TYPE(vc), val);
 
+	dev_dbg(formatter->dev, "csi_formatter_start_stream: EXIT ret=0 vc=%u\n", vc);
 	return 0;
 }
 
@@ -521,42 +578,56 @@ static int formatter_subdev_enable_streams(struct v4l2_subdev *sd,
 	u64 sink_streams;
 	int ret;
 
+	dev_dbg(dev, "FORMATTER: enable_streams BEGIN pad=%u streams_mask=0x%llx\n",
+		 pad, streams_mask);
+
 	if (!formatter->csi_sd) {
-		dev_err(dev, "CSI controller don't link with formatter\n");
+		dev_err(dev, "FORMATTER: CSI controller not linked!\n");
+		dev_dbg(dev, "formatter_subdev_enable_streams: EXIT ret=-EPIPE\n");
 		return -EPIPE;
 	}
 
 	if (!formatter->enabled_streams) {
+		dev_dbg(dev, "FORMATTER: first stream, pm_runtime_resume\n");
 		ret = pm_runtime_resume_and_get(formatter->dev);
 		if (ret < 0) {
-			dev_err(dev, "Formatter runtime get fail\n");
+			dev_err(dev, "FORMATTER: pm_runtime FAILED ret=%d\n", ret);
+			dev_dbg(dev, "formatter_subdev_enable_streams: EXIT ret=%d\n", ret);
 			return ret;
 		}
 	}
 
+	dev_dbg(dev, "FORMATTER: calling start_stream\n");
 	ret = csi_formatter_start_stream(formatter, streams_mask);
-	if (ret)
+	if (ret) {
+		dev_err(dev, "FORMATTER: start_stream FAILED ret=%d\n", ret);
 		goto runtime_put;
+	}
 
 	sink_streams = v4l2_subdev_state_xlate_streams(state,
 						       CSI_FORMATTER_PAD_SOURCE,
 						       CSI_FORMATTER_PAD_SINK,
 						       &streams_mask);
 
-	dev_dbg(dev, "remote sd: %s pad: %u, sink_stream:0x%llx\n",
-		formatter->csi_sd->name, formatter->remote_pad, sink_streams);
+	dev_dbg(dev, "FORMATTER: enabling CSI streams: remote_sd=%s remote_pad=%u sink_streams=0x%llx\n",
+		 formatter->csi_sd->name, formatter->remote_pad, sink_streams);
 
 	ret = v4l2_subdev_enable_streams(formatter->csi_sd, formatter->remote_pad,
 					 sink_streams);
-	if (ret)
+	if (ret) {
+		dev_err(dev, "FORMATTER: v4l2_subdev_enable_streams FAILED ret=%d\n", ret);
 		goto runtime_put;
+	}
 
 	formatter->enabled_streams |= streams_mask;
+	dev_dbg(dev, "FORMATTER: enable_streams SUCCESS\n");
 
+	dev_dbg(dev, "formatter_subdev_enable_streams: EXIT ret=0\n");
 	return 0;
 
 runtime_put:
 	pm_runtime_put(formatter->dev);
+	dev_dbg(dev, "formatter_subdev_enable_streams: EXIT ret=%d (runtime_put)\n", ret);
 	return ret;
 }
 
@@ -566,6 +637,8 @@ static int csi_formatter_stop_stream(struct csi_formatter *formatter,
 	unsigned int i;
 	u8 vc;
 
+	dev_dbg(formatter->dev, "csi_formatter_stop_stream: ENTER stream_mask=0x%llx\n", stream_mask);
+
 	for (i = 0; i < V4L2_FRAME_DESC_ENTRY_MAX; ++i) {
 		if (stream_mask & BIT(i))
 			break;
@@ -573,6 +646,7 @@ static int csi_formatter_stop_stream(struct csi_formatter *formatter,
 
 	if (i == V4L2_FRAME_DESC_ENTRY_MAX) {
 		dev_err(formatter->dev, "Stream ID out of range\n");
+		dev_dbg(formatter->dev, "csi_formatter_stop_stream: EXIT ret=-EINVAL\n");
 		return -EINVAL;
 	}
 
@@ -580,11 +654,13 @@ static int csi_formatter_stop_stream(struct csi_formatter *formatter,
 
 	if (vc < 0 || vc > CSI_FORMATTER_VC_MAX) {
 		dev_err(formatter->dev, "Invalid virtual channel(%d)\n", vc);
+		dev_dbg(formatter->dev, "csi_formatter_stop_stream: EXIT ret=-EINVAL (bad vc)\n");
 		return -EINVAL;
 	}
 
 	formatter_write(formatter, CSI_VCx_PIXEL_DATA_TYPE(vc), 0);
 
+	dev_dbg(formatter->dev, "csi_formatter_stop_stream: EXIT ret=0\n");
 	return 0;
 }
 
@@ -596,6 +672,9 @@ static int formatter_subdev_disable_streams(struct v4l2_subdev *sd,
 	u64 sink_streams;
 	int ret;
 
+	dev_dbg(formatter->dev, "formatter_subdev_disable_streams: ENTER pad=%u streams_mask=0x%llx\n",
+		 pad, streams_mask);
+
 	sink_streams = v4l2_subdev_state_xlate_streams(state,
 						       CSI_FORMATTER_PAD_SOURCE,
 						       CSI_FORMATTER_PAD_SINK,
@@ -603,8 +682,10 @@ static int formatter_subdev_disable_streams(struct v4l2_subdev *sd,
 
 	ret = v4l2_subdev_disable_streams(formatter->csi_sd, formatter->remote_pad,
 					  sink_streams);
-	if (ret)
+	if (ret) {
+		dev_dbg(formatter->dev, "formatter_subdev_disable_streams: EXIT ret=%d\n", ret);
 		return ret;
+	}
 
 	csi_formatter_stop_stream(formatter, streams_mask);
 
@@ -613,6 +694,7 @@ static int formatter_subdev_disable_streams(struct v4l2_subdev *sd,
 	if (!formatter->enabled_streams)
 		pm_runtime_put(formatter->dev);
 
+	dev_dbg(formatter->dev, "formatter_subdev_disable_streams: EXIT ret=0\n");
 	return 0;
 }
 
@@ -648,6 +730,8 @@ static int csi_formatter_subdev_init(struct csi_formatter *formatter)
 	struct v4l2_subdev *sd = &formatter->sd;
 	int ret;
 
+	dev_dbg(formatter->dev, "csi_formatter_subdev_init: ENTER\n");
+
 	v4l2_subdev_init(sd, &formatter_subdev_ops);
 
 	snprintf(sd->name, sizeof(sd->name), "%s", dev_name(formatter->dev));
@@ -667,6 +751,7 @@ static int csi_formatter_subdev_init(struct csi_formatter *formatter)
 				     formatter->pads);
 	if (ret) {
 		dev_err(formatter->dev, "Failed to init pads\n");
+		dev_dbg(formatter->dev, "csi_formatter_subdev_init: EXIT ret=%d\n", ret);
 		return ret;
 	}
 
@@ -674,6 +759,7 @@ static int csi_formatter_subdev_init(struct csi_formatter *formatter)
 	if (ret)
 		media_entity_cleanup(&sd->entity);
 
+	dev_dbg(formatter->dev, "csi_formatter_subdev_init: EXIT ret=%d\n", ret);
 	return ret;
 }
 
@@ -695,22 +781,28 @@ static int csi_formatter_notify_bound(struct v4l2_async_notifier *notifier,
 	struct media_pad *remote_pad;
 	int ret;
 
-	formatter->csi_sd = sd;
+	dev_dbg(formatter->dev, "csi_formatter_notify_bound: ENTER sd=%s\n", sd->name);
 
+	formatter->csi_sd = sd;
 
 	dev_dbg(formatter->dev, "Bound subdev: %s pad\n", sd->name);
 
 	ret = v4l2_create_fwnode_links_to_pad(sd, sink, link_flags);
-	if (ret < 0)
+	if (ret < 0) {
+		dev_dbg(formatter->dev, "csi_formatter_notify_bound: EXIT ret=%d\n", ret);
 		return ret;
+	}
 
 	remote_pad = media_pad_remote_pad_first(sink);
 	if (!remote_pad) {
 		dev_err(formatter->dev, "Pipe not setup correctly\n");
+		dev_dbg(formatter->dev, "csi_formatter_notify_bound: EXIT ret=-EPIPE\n");
 		return -EPIPE;
 	}
 	formatter->remote_pad = remote_pad->index;
 
+	dev_dbg(formatter->dev, "csi_formatter_notify_bound: EXIT ret=0 remote_pad=%u\n",
+		 formatter->remote_pad);
 	return 0;
 }
 
@@ -725,17 +817,22 @@ static int csi_formatter_async_register(struct csi_formatter *formatter)
 	struct fwnode_handle *ep;
 	int ret;
 
+	dev_dbg(dev, "csi_formatter_async_register: ENTER\n");
+
 	v4l2_async_subdev_nf_init(&formatter->notifier, &formatter->sd);
 
 	ep = fwnode_graph_get_endpoint_by_id(dev_fwnode(dev), 0, 0,
 					     FWNODE_GRAPH_ENDPOINT_NEXT);
-	if (!ep)
+	if (!ep) {
+		dev_dbg(dev, "csi_formatter_async_register: EXIT ret=-ENOTCONN\n");
 		return -ENOTCONN;
+	}
 
 	asd = v4l2_async_nf_add_fwnode_remote(&formatter->notifier, ep,
 					      struct v4l2_async_connection);
 	if (IS_ERR(asd)) {
 		fwnode_handle_put(ep);
+		dev_dbg(dev, "csi_formatter_async_register: EXIT ret=%ld (add_fwnode)\n", PTR_ERR(asd));
 		return PTR_ERR(asd);
 	}
 
@@ -744,10 +841,14 @@ static int csi_formatter_async_register(struct csi_formatter *formatter)
 	formatter->notifier.ops = &formatter_notify_ops;
 
 	ret = v4l2_async_nf_register(&formatter->notifier);
-	if (ret)
+	if (ret) {
+		dev_dbg(dev, "csi_formatter_async_register: EXIT ret=%d (nf_register)\n", ret);
 		return ret;
+	}
 
-	return v4l2_async_register_subdev(&formatter->sd);
+	ret = v4l2_async_register_subdev(&formatter->sd);
+	dev_dbg(dev, "csi_formatter_async_register: EXIT ret=%d\n", ret);
+	return ret;
 }
 
 /* -----------------------------------------------------------------------------
@@ -756,19 +857,28 @@ static int csi_formatter_async_register(struct csi_formatter *formatter)
 
 static int csi_formatter_system_suspend(struct device *dev)
 {
-	return pm_runtime_force_suspend(dev);
+	int ret;
+
+	dev_dbg(dev, "csi_formatter_system_suspend: ENTER\n");
+	ret = pm_runtime_force_suspend(dev);
+	dev_dbg(dev, "csi_formatter_system_suspend: EXIT ret=%d\n", ret);
+	return ret;
 }
 
 static int csi_formatter_system_resume(struct device *dev)
 {
 	int ret;
 
+	dev_dbg(dev, "csi_formatter_system_resume: ENTER\n");
+
 	ret = pm_runtime_force_resume(dev);
 	if (ret < 0) {
 		dev_err(dev, "force resume %s failed!\n", dev_name(dev));
+		dev_dbg(dev, "csi_formatter_system_resume: EXIT ret=%d\n", ret);
 		return ret;
 	}
 
+	dev_dbg(dev, "csi_formatter_system_resume: EXIT ret=0\n");
 	return 0;
 }
 
@@ -777,8 +887,9 @@ static int csi_formatter_runtime_suspend(struct device *dev)
 	struct v4l2_subdev *sd = dev_get_drvdata(dev);
 	struct csi_formatter *formatter = sd_to_formatter(sd);
 
+	dev_dbg(dev, "csi_formatter_runtime_suspend: ENTER\n");
 	clk_disable_unprepare(formatter->clk);
-
+	dev_dbg(dev, "csi_formatter_runtime_suspend: EXIT ret=0\n");
 	return 0;
 }
 
@@ -786,8 +897,12 @@ static int csi_formatter_runtime_resume(struct device *dev)
 {
 	struct v4l2_subdev *sd = dev_get_drvdata(dev);
 	struct csi_formatter *formatter = sd_to_formatter(sd);
+	int ret;
 
-	return clk_prepare_enable(formatter->clk);
+	dev_dbg(dev, "csi_formatter_runtime_resume: ENTER\n");
+	ret = clk_prepare_enable(formatter->clk);
+	dev_dbg(dev, "csi_formatter_runtime_resume: EXIT ret=%d\n", ret);
+	return ret;
 }
 
 static const struct dev_pm_ops csi_formatter_pm_ops = {
@@ -805,21 +920,27 @@ static int csi_formatter_probe(struct platform_device *pdev)
 	u32 val;
 	int ret;
 
+	dev_dbg(dev, "csi_formatter_probe: ENTER\n");
+
 	formatter = devm_kzalloc(dev, sizeof(*formatter), GFP_KERNEL);
-	if (!formatter)
+	if (!formatter) {
+		dev_dbg(dev, "csi_formatter_probe: EXIT ret=-ENOMEM\n");
 		return -ENOMEM;
+	}
 
 	formatter->dev = dev;
 
 	formatter->regs = syscon_node_to_regmap(dev->parent->of_node);
 	if (IS_ERR(formatter->regs)) {
 		dev_err(dev, "Failed to get csi formatter regmap\n");
+		dev_dbg(dev, "csi_formatter_probe: EXIT ret=-ENODEV (regmap)\n");
 		return -ENODEV;
 	}
 
 	ret = of_property_read_u32(dev->of_node, "reg", &val);
 	if (ret < 0) {
 		dev_err(dev, "Failed to get csi formatter reg property\n");
+		dev_dbg(dev, "csi_formatter_probe: EXIT ret=%d (reg prop)\n", ret);
 		return ret;
 	}
 	formatter->reg_offset = val;
@@ -827,12 +948,14 @@ static int csi_formatter_probe(struct platform_device *pdev)
 	formatter->clk = devm_clk_get(dev, NULL);
 	if (IS_ERR(formatter->clk)) {
 		dev_err(dev, "Failed to get pixel clock\n");
+		dev_dbg(dev, "csi_formatter_probe: EXIT ret=%ld (clk)\n", PTR_ERR(formatter->clk));
 		return PTR_ERR(formatter->clk);
 	}
 
 	ret = csi_formatter_subdev_init(formatter);
 	if (ret < 0) {
 		dev_err(dev, "formatter subdev init fail\n");
+		dev_dbg(dev, "csi_formatter_probe: EXIT ret=%d (subdev_init)\n", ret);
 		return ret;
 	}
 
@@ -843,6 +966,7 @@ static int csi_formatter_probe(struct platform_device *pdev)
 	if (ret < 0) {
 		v4l2_subdev_cleanup(&formatter->sd);
 		dev_err(dev, "Async register failed\n");
+		dev_dbg(dev, "csi_formatter_probe: EXIT ret=%d (async_register)\n", ret);
 		return ret;
 	}
 
@@ -851,6 +975,7 @@ static int csi_formatter_probe(struct platform_device *pdev)
 	/* Enable runtime PM. */
 	pm_runtime_enable(dev);
 
+	dev_dbg(dev, "csi_formatter_probe: EXIT ret=0\n");
 	return 0;
 }
 
@@ -858,6 +983,8 @@ static void csi_formatter_remove(struct platform_device *pdev)
 {
 	struct v4l2_subdev *sd = platform_get_drvdata(pdev);
 	struct csi_formatter *formatter = sd_to_formatter(sd);
+
+	dev_dbg(&pdev->dev, "csi_formatter_remove: ENTER\n");
 
 	v4l2_async_nf_unregister(&formatter->notifier);
 	v4l2_async_nf_cleanup(&formatter->notifier);
@@ -869,6 +996,8 @@ static void csi_formatter_remove(struct platform_device *pdev)
 	fwnode_handle_put(formatter->sd.fwnode);
 
 	pm_runtime_set_suspended(&pdev->dev);
+
+	dev_dbg(&pdev->dev, "csi_formatter_remove: EXIT\n");
 }
 
 static const struct of_device_id csi_formatter_of_match[] = {

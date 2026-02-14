@@ -275,11 +275,14 @@ static int mxc_isi_get_vc(struct mxc_isi_pipe *pipe)
 	unsigned int i;
 	int ret;
 
+	dev_dbg(dev, "mxc_isi_get_vc: ENTER pipe=%d\n", pipe->id);
+
 	ret = v4l2_subdev_call(&xbar->sd, pad, get_frame_desc,
 			       xbar->num_sinks + pipe->id, &source_fd);
 	if (ret < 0) {
 		dev_err(dev, "Failed to get source frame desc from pad %u\n",
 			xbar->num_sinks + pipe->id);
+		dev_dbg(dev, "mxc_isi_get_vc: EXIT ret=%d\n", ret);
 		return ret;
 	}
 
@@ -293,21 +296,25 @@ static int mxc_isi_get_vc(struct mxc_isi_pipe *pipe)
 	if (source_fd.num_entries == 0) {
 		/* If there is no source fd entries we assume virtual channel is 0 */
 		pipe->vc = 0;
+		dev_dbg(dev, "mxc_isi_get_vc: EXIT ret=0 (no entries, vc=0)\n");
 		return 0;
 	}
 
 	if (!entry) {
 		dev_err(dev, "Failed to find stream from source frame desc\n");
+		dev_dbg(dev, "mxc_isi_get_vc: EXIT ret=%d\n", -EPIPE);
 		return -EPIPE;
 	}
 
 	if (entry->bus.csi2.vc > pipe->isi->pdata->num_channels) {
 		dev_err(dev, "Virtual channel(%d) out of range\n",
 			entry->bus.csi2.vc);
+		dev_dbg(dev, "mxc_isi_get_vc: EXIT ret=%d\n", -EINVAL);
 		return -EINVAL;
 	}
 
 	pipe->vc = entry->bus.csi2.vc;
+	dev_dbg(dev, "mxc_isi_get_vc: EXIT ret=0 vc=%u\n", pipe->vc);
 	return 0;
 }
 
@@ -326,7 +333,7 @@ int mxc_isi_pipe_enable(struct mxc_isi_pipe *pipe)
 	u32 input;
 	int ret;
 
-	dev_info(pipe->isi->dev, "ISI-PIPE: pipe_enable BEGIN, pipe=%d\n", pipe->id);
+	dev_dbg(pipe->isi->dev, "mxc_isi_pipe_enable: ENTER pipe=%d\n", pipe->id);
 
 	/*
 	 * Find the connected input by inspecting the crossbar switch routing
@@ -339,12 +346,13 @@ int mxc_isi_pipe_enable(struct mxc_isi_pipe *pipe)
 	v4l2_subdev_unlock_state(state);
 
 	if (ret) {
-		dev_err(pipe->isi->dev, "ISI-PIPE: routing_find_opposite_end FAILED, no route to pipe %d\n",
+		dev_err(pipe->isi->dev, "mxc_isi_pipe_enable: routing_find_opposite_end FAILED, no route to pipe %d\n",
 			pipe->id);
+		dev_dbg(pipe->isi->dev, "mxc_isi_pipe_enable: EXIT ret=%d\n", -EPIPE);
 		return -EPIPE;
 	}
 
-	dev_info(pipe->isi->dev, "ISI-PIPE: Found route from crossbar input=%u to pipe=%d\n",
+	dev_dbg(pipe->isi->dev, "mxc_isi_pipe_enable: Found route from crossbar input=%u to pipe=%d\n",
 		 input, pipe->id);
 
 	/* Configure the pipeline. */
@@ -369,35 +377,37 @@ int mxc_isi_pipe_enable(struct mxc_isi_pipe *pipe)
 
 	ret = mxc_isi_get_vc(pipe);
 	if (ret) {
-		dev_err(pipe->isi->dev, "ISI-PIPE: get_vc FAILED ret=%d\n", ret);
+		dev_err(pipe->isi->dev, "mxc_isi_pipe_enable: get_vc FAILED ret=%d\n", ret);
+		dev_dbg(pipe->isi->dev, "mxc_isi_pipe_enable: EXIT ret=%d\n", ret);
 		return ret;
 	}
 
-	dev_info(pipe->isi->dev, "ISI-PIPE: vc=%d, sink %ux%u, compose %ux%u, crop %ux%u\n",
+	dev_dbg(pipe->isi->dev, "mxc_isi_pipe_enable: vc=%d, sink %ux%u, compose %ux%u, crop %ux%u\n",
 		 pipe->vc, in_size.width, in_size.height,
 		 scale.width, scale.height, crop.width, crop.height);
 
 	/* Configure the ISI channel. */
-	dev_info(pipe->isi->dev, "ISI-PIPE: Configuring channel, input=%u\n", input);
+	dev_dbg(pipe->isi->dev, "mxc_isi_pipe_enable: Configuring channel, input=%u\n", input);
 	mxc_isi_channel_config(pipe, input, &in_size, &scale, &crop,
 			       sink_info->encoding, src_info->encoding);
 
-	dev_info(pipe->isi->dev, "ISI-PIPE: Enabling channel\n");
+	dev_dbg(pipe->isi->dev, "mxc_isi_pipe_enable: Enabling channel\n");
 	mxc_isi_channel_enable(pipe);
 
 	/* Enable streams on the crossbar switch. */
-	dev_info(pipe->isi->dev, "ISI-PIPE: Enabling crossbar streams, pad=%u\n",
+	dev_dbg(pipe->isi->dev, "mxc_isi_pipe_enable: Enabling crossbar streams, pad=%u\n",
 		 xbar->num_sinks + pipe->id);
 	ret = v4l2_subdev_enable_streams(&xbar->sd, xbar->num_sinks + pipe->id,
 					 BIT(0));
 	if (ret) {
 		mxc_isi_channel_disable(pipe);
-		dev_err(pipe->isi->dev, "ISI-PIPE: enable_streams FAILED for pipe %u, ret=%d\n",
+		dev_err(pipe->isi->dev, "mxc_isi_pipe_enable: enable_streams FAILED for pipe %u, ret=%d\n",
 			pipe->id, ret);
+		dev_dbg(pipe->isi->dev, "mxc_isi_pipe_enable: EXIT ret=%d\n", ret);
 		return ret;
 	}
 
-	dev_info(pipe->isi->dev, "ISI-PIPE: pipe_enable SUCCESS\n");
+	dev_dbg(pipe->isi->dev, "mxc_isi_pipe_enable: EXIT ret=0\n");
 	return 0;
 }
 
@@ -406,6 +416,8 @@ void mxc_isi_pipe_disable(struct mxc_isi_pipe *pipe)
 	struct mxc_isi_crossbar *xbar = &pipe->isi->crossbar;
 	int ret;
 
+	dev_dbg(pipe->isi->dev, "mxc_isi_pipe_disable: ENTER pipe=%d\n", pipe->id);
+
 	ret = v4l2_subdev_disable_streams(&xbar->sd, xbar->num_sinks + pipe->id,
 					  BIT(0));
 	if (ret)
@@ -413,6 +425,8 @@ void mxc_isi_pipe_disable(struct mxc_isi_pipe *pipe)
 			pipe->id);
 
 	mxc_isi_channel_disable(pipe);
+
+	dev_dbg(pipe->isi->dev, "mxc_isi_pipe_disable: EXIT\n");
 }
 
 /* -----------------------------------------------------------------------------
@@ -452,6 +466,8 @@ static int mxc_isi_pipe_init_state(struct v4l2_subdev *sd,
 	struct v4l2_rect *compose;
 	struct v4l2_rect *crop;
 
+	dev_dbg(pipe->isi->dev, "mxc_isi_pipe_init_state: ENTER\n");
+
 	fmt_sink = mxc_isi_pipe_get_pad_format(pipe, state,
 					       MXC_ISI_PIPE_PAD_SINK);
 	fmt_source = mxc_isi_pipe_get_pad_format(pipe, state,
@@ -482,6 +498,7 @@ static int mxc_isi_pipe_init_state(struct v4l2_subdev *sd,
 
 	*crop = *compose;
 
+	dev_dbg(pipe->isi->dev, "mxc_isi_pipe_init_state: EXIT ret=0\n");
 	return 0;
 }
 
@@ -498,6 +515,9 @@ static int mxc_isi_pipe_enum_mbus_code(struct v4l2_subdev *sd,
 	unsigned int index;
 	unsigned int i;
 
+	dev_dbg(pipe->isi->dev, "mxc_isi_pipe_enum_mbus_code: ENTER pad=%u index=%u\n",
+		 code->pad, code->index);
+
 	if (code->pad == MXC_ISI_PIPE_PAD_SOURCE) {
 		const struct v4l2_mbus_framefmt *format;
 
@@ -511,8 +531,10 @@ static int mxc_isi_pipe_enum_mbus_code(struct v4l2_subdev *sd,
 			 * For RAW formats, the sink and source media bus codes
 			 * must match.
 			 */
-			if (code->index)
+			if (code->index) {
+				dev_dbg(pipe->isi->dev, "mxc_isi_pipe_enum_mbus_code: EXIT ret=%d\n", -EINVAL);
 				return -EINVAL;
+			}
 
 			code->code = info->output;
 		} else {
@@ -521,12 +543,15 @@ static int mxc_isi_pipe_enum_mbus_code(struct v4l2_subdev *sd,
 			 * conversion. Either of the two output formats can be
 			 * used regardless of the input.
 			 */
-			if (code->index > 1)
+			if (code->index > 1) {
+				dev_dbg(pipe->isi->dev, "mxc_isi_pipe_enum_mbus_code: EXIT ret=%d\n", -EINVAL);
 				return -EINVAL;
+			}
 
 			code->code = output_codes[code->index];
 		}
 
+		dev_dbg(pipe->isi->dev, "mxc_isi_pipe_enum_mbus_code: EXIT ret=0\n");
 		return 0;
 	}
 
@@ -540,12 +565,14 @@ static int mxc_isi_pipe_enum_mbus_code(struct v4l2_subdev *sd,
 
 		if (index == 0) {
 			code->code = info->mbus_code;
+			dev_dbg(pipe->isi->dev, "mxc_isi_pipe_enum_mbus_code: EXIT ret=0\n");
 			return 0;
 		}
 
 		index--;
 	}
 
+	dev_dbg(pipe->isi->dev, "mxc_isi_pipe_enum_mbus_code: EXIT ret=%d\n", -EINVAL);
 	return -EINVAL;
 }
 
@@ -572,6 +599,8 @@ static void update_pads_format(struct mxc_isi_pipe *pipe,
 	struct v4l2_rect *comp, *crop;
 	unsigned int max_width;
 	bool bypass;
+
+	dev_dbg(pipe->isi->dev, "update_pads_format: ENTER\n");
 
 	sink_fmt = mxc_isi_pipe_get_pad_format(pipe, state, MXC_ISI_PIPE_PAD_SINK);
 	src_fmt = mxc_isi_pipe_get_pad_format(pipe, state, MXC_ISI_PIPE_PAD_SOURCE);
@@ -603,6 +632,8 @@ static void update_pads_format(struct mxc_isi_pipe *pipe,
 	src_fmt->width = crop->width;
 
 	*mf = *mxc_isi_pipe_get_pad_format(pipe, state, fmt->pad);
+
+	dev_dbg(pipe->isi->dev, "update_pads_format: EXIT\n");
 }
 
 static int mxc_isi_pipe_set_fmt(struct v4l2_subdev *sd,
@@ -615,8 +646,12 @@ static int mxc_isi_pipe_set_fmt(struct v4l2_subdev *sd,
 	struct v4l2_mbus_framefmt *format;
 	struct v4l2_rect *rect;
 
-	if (vb2_is_busy(&pipe->video.vb2_q))
+	dev_dbg(pipe->isi->dev, "mxc_isi_pipe_set_fmt: ENTER pad=%u\n", fmt->pad);
+
+	if (vb2_is_busy(&pipe->video.vb2_q)) {
+		dev_dbg(pipe->isi->dev, "mxc_isi_pipe_set_fmt: EXIT ret=%d (busy)\n", -EBUSY);
 		return -EBUSY;
+	}
 
 	if (fmt->pad == MXC_ISI_PIPE_PAD_SINK) {
 		info = mxc_isi_bus_format_by_code(mf->code,
@@ -694,9 +729,10 @@ static int mxc_isi_pipe_set_fmt(struct v4l2_subdev *sd,
 
 	update_pads_format(pipe, state, fmt);
 
-	dev_dbg(pipe->isi->dev, "pad%u: code: 0x%04x, %ux%u",
-		fmt->pad, mf->code, mf->width, mf->height);
+	dev_dbg(pipe->isi->dev, "mxc_isi_pipe_set_fmt: pad%u: code: 0x%04x, %ux%u\n",
+		 fmt->pad, mf->code, mf->width, mf->height);
 
+	dev_dbg(pipe->isi->dev, "mxc_isi_pipe_set_fmt: EXIT ret=0\n");
 	return 0;
 }
 
@@ -708,11 +744,16 @@ static int mxc_isi_pipe_get_selection(struct v4l2_subdev *sd,
 	const struct v4l2_mbus_framefmt *format;
 	const struct v4l2_rect *rect;
 
+	dev_dbg(pipe->isi->dev, "mxc_isi_pipe_get_selection: ENTER target=0x%x pad=%u\n",
+		 sel->target, sel->pad);
+
 	switch (sel->target) {
 	case V4L2_SEL_TGT_COMPOSE_BOUNDS:
-		if (sel->pad != MXC_ISI_PIPE_PAD_SINK)
+		if (sel->pad != MXC_ISI_PIPE_PAD_SINK) {
 			/* No compose rectangle on source pad. */
+			dev_dbg(pipe->isi->dev, "mxc_isi_pipe_get_selection: EXIT ret=%d\n", -EINVAL);
 			return -EINVAL;
+		}
 
 		/* The sink compose is bound by the sink format. */
 		format = mxc_isi_pipe_get_pad_format(pipe, state,
@@ -724,9 +765,11 @@ static int mxc_isi_pipe_get_selection(struct v4l2_subdev *sd,
 		break;
 
 	case V4L2_SEL_TGT_CROP_BOUNDS:
-		if (sel->pad != MXC_ISI_PIPE_PAD_SOURCE)
+		if (sel->pad != MXC_ISI_PIPE_PAD_SOURCE) {
 			/* No crop rectangle on sink pad. */
+			dev_dbg(pipe->isi->dev, "mxc_isi_pipe_get_selection: EXIT ret=%d\n", -EINVAL);
 			return -EINVAL;
+		}
 
 		/* The source crop is bound by the sink compose. */
 		rect = mxc_isi_pipe_get_pad_compose(pipe, state,
@@ -735,27 +778,33 @@ static int mxc_isi_pipe_get_selection(struct v4l2_subdev *sd,
 		break;
 
 	case V4L2_SEL_TGT_CROP:
-		if (sel->pad != MXC_ISI_PIPE_PAD_SOURCE)
+		if (sel->pad != MXC_ISI_PIPE_PAD_SOURCE) {
 			/* No crop rectangle on sink pad. */
+			dev_dbg(pipe->isi->dev, "mxc_isi_pipe_get_selection: EXIT ret=%d\n", -EINVAL);
 			return -EINVAL;
+		}
 
 		rect = mxc_isi_pipe_get_pad_crop(pipe, state, sel->pad);
 		sel->r = *rect;
 		break;
 
 	case V4L2_SEL_TGT_COMPOSE:
-		if (sel->pad != MXC_ISI_PIPE_PAD_SINK)
+		if (sel->pad != MXC_ISI_PIPE_PAD_SINK) {
 			/* No compose rectangle on source pad. */
+			dev_dbg(pipe->isi->dev, "mxc_isi_pipe_get_selection: EXIT ret=%d\n", -EINVAL);
 			return -EINVAL;
+		}
 
 		rect = mxc_isi_pipe_get_pad_compose(pipe, state, sel->pad);
 		sel->r = *rect;
 		break;
 
 	default:
+		dev_dbg(pipe->isi->dev, "mxc_isi_pipe_get_selection: EXIT ret=%d\n", -EINVAL);
 		return -EINVAL;
 	}
 
+	dev_dbg(pipe->isi->dev, "mxc_isi_pipe_get_selection: EXIT ret=0\n");
 	return 0;
 }
 
@@ -767,11 +816,16 @@ static int mxc_isi_pipe_set_selection(struct v4l2_subdev *sd,
 	struct v4l2_mbus_framefmt *format;
 	struct v4l2_rect *rect;
 
+	dev_dbg(pipe->isi->dev, "mxc_isi_pipe_set_selection: ENTER target=0x%x pad=%u\n",
+		 sel->target, sel->pad);
+
 	switch (sel->target) {
 	case V4L2_SEL_TGT_CROP:
-		if (sel->pad != MXC_ISI_PIPE_PAD_SOURCE)
+		if (sel->pad != MXC_ISI_PIPE_PAD_SOURCE) {
 			/* The pipeline support cropping on the source only. */
+			dev_dbg(pipe->isi->dev, "mxc_isi_pipe_set_selection: EXIT ret=%d\n", -EINVAL);
 			return -EINVAL;
+		}
 
 		/* The source crop is bound by the sink compose. */
 		rect = mxc_isi_pipe_get_pad_compose(pipe, state,
@@ -795,9 +849,11 @@ static int mxc_isi_pipe_set_selection(struct v4l2_subdev *sd,
 		break;
 
 	case V4L2_SEL_TGT_COMPOSE:
-		if (sel->pad != MXC_ISI_PIPE_PAD_SINK)
+		if (sel->pad != MXC_ISI_PIPE_PAD_SINK) {
 			/* Composing is supported on the sink only. */
+			dev_dbg(pipe->isi->dev, "mxc_isi_pipe_set_selection: EXIT ret=%d\n", -EINVAL);
 			return -EINVAL;
+		}
 
 		/* The sink crop is bound by the sink format downscaling only). */
 		format = mxc_isi_pipe_get_pad_format(pipe, state,
@@ -829,13 +885,15 @@ static int mxc_isi_pipe_set_selection(struct v4l2_subdev *sd,
 		break;
 
 	default:
+		dev_dbg(pipe->isi->dev, "mxc_isi_pipe_set_selection: EXIT ret=%d\n", -EINVAL);
 		return -EINVAL;
 	}
 
-	dev_dbg(pipe->isi->dev, "%s, target %#x: (%d,%d)/%dx%d", __func__,
-		sel->target, sel->r.left, sel->r.top, sel->r.width,
-		sel->r.height);
+	dev_dbg(pipe->isi->dev, "mxc_isi_pipe_set_selection: target %#x: (%d,%d)/%dx%d\n",
+		 sel->target, sel->r.left, sel->r.top, sel->r.width,
+		 sel->r.height);
 
+	dev_dbg(pipe->isi->dev, "mxc_isi_pipe_set_selection: EXIT ret=0\n");
 	return 0;
 }
 
@@ -875,26 +933,26 @@ static irqreturn_t mxc_isi_pipe_irq_handler(int irq, void *priv)
 	if (status & (CHNL_STS_AXI_WR_ERR_Y |
 		      CHNL_STS_AXI_WR_ERR_U |
 		      CHNL_STS_AXI_WR_ERR_V))
-		dev_dbg(pipe->isi->dev, "%s: IRQ AXI Error stat=0x%X\n",
-			__func__, status);
+		dev_dbg(pipe->isi->dev, "mxc_isi_pipe_irq_handler: IRQ AXI Error stat=0x%X\n",
+			 status);
 
 	if (status & (ier_reg->panic_y_buf_en.mask |
 		      ier_reg->panic_u_buf_en.mask |
 		      ier_reg->panic_v_buf_en.mask))
-		dev_dbg(pipe->isi->dev, "%s: IRQ Panic OFLW Error stat=0x%X\n",
-			__func__, status);
+		dev_dbg(pipe->isi->dev, "mxc_isi_pipe_irq_handler: IRQ Panic OFLW Error stat=0x%X\n",
+			 status);
 
 	if (status & (ier_reg->oflw_y_buf_en.mask |
 		      ier_reg->oflw_u_buf_en.mask |
 		      ier_reg->oflw_v_buf_en.mask))
-		dev_dbg(pipe->isi->dev, "%s: IRQ OFLW Error stat=0x%X\n",
-			__func__, status);
+		dev_dbg(pipe->isi->dev, "mxc_isi_pipe_irq_handler: IRQ OFLW Error stat=0x%X\n",
+			 status);
 
 	if (status & (ier_reg->excs_oflw_y_buf_en.mask |
 		      ier_reg->excs_oflw_u_buf_en.mask |
 		      ier_reg->excs_oflw_v_buf_en.mask))
-		dev_dbg(pipe->isi->dev, "%s: IRQ EXCS OFLW Error stat=0x%X\n",
-			__func__, status);
+		dev_dbg(pipe->isi->dev, "mxc_isi_pipe_irq_handler: IRQ EXCS OFLW Error stat=0x%X\n",
+			 status);
 
 	return IRQ_HANDLED;
 }
@@ -913,6 +971,8 @@ int mxc_isi_pipe_init(struct mxc_isi_dev *isi, unsigned int id)
 	struct v4l2_subdev *sd;
 	int irq;
 	int ret;
+
+	dev_dbg(isi->dev, "mxc_isi_pipe_init: ENTER id=%u\n", id);
 
 	pipe->id = id;
 	pipe->isi = isi;
@@ -967,12 +1027,14 @@ int mxc_isi_pipe_init(struct mxc_isi_dev *isi, unsigned int id)
 		goto error;
 	}
 
+	dev_dbg(isi->dev, "mxc_isi_pipe_init: EXIT ret=0\n");
 	return 0;
 
 error:
 	media_entity_cleanup(&sd->entity);
 	mutex_destroy(&pipe->lock);
 
+	dev_dbg(isi->dev, "mxc_isi_pipe_init: EXIT ret=%d\n", ret);
 	return ret;
 }
 
@@ -980,8 +1042,12 @@ void mxc_isi_pipe_cleanup(struct mxc_isi_pipe *pipe)
 {
 	struct v4l2_subdev *sd = &pipe->sd;
 
+	dev_dbg(pipe->isi->dev, "mxc_isi_pipe_cleanup: ENTER\n");
+
 	media_entity_cleanup(&sd->entity);
 	mutex_destroy(&pipe->lock);
+
+	dev_dbg(pipe->isi->dev, "mxc_isi_pipe_cleanup: EXIT\n");
 }
 
 int mxc_isi_pipe_acquire(struct mxc_isi_pipe *pipe,
@@ -992,13 +1058,17 @@ int mxc_isi_pipe_acquire(struct mxc_isi_pipe *pipe,
 	struct v4l2_subdev_state *state;
 	int ret;
 
+	dev_dbg(pipe->isi->dev, "mxc_isi_pipe_acquire: ENTER pipe=%d\n", pipe->id);
+
 	state = v4l2_subdev_lock_and_get_active_state(sd);
 	sink_fmt = v4l2_subdev_state_get_format(state, MXC_ISI_PIPE_PAD_SINK);
 	v4l2_subdev_unlock_state(state);
 
 	ret = mxc_isi_channel_acquire(pipe, irq_handler, pipe->bypass);
-	if (ret)
+	if (ret) {
+		dev_dbg(pipe->isi->dev, "mxc_isi_pipe_acquire: EXIT ret=%d (channel_acquire)\n", ret);
 		return ret;
+	}
 
 	/* Chain the channel if needed for wide resolutions. */
 	if (sink_fmt->width > MXC_ISI_MAX_WIDTH_UNCHAINED && !pipe->bypass) {
@@ -1007,11 +1077,16 @@ int mxc_isi_pipe_acquire(struct mxc_isi_pipe *pipe,
 			mxc_isi_channel_release(pipe);
 	}
 
+	dev_dbg(pipe->isi->dev, "mxc_isi_pipe_acquire: EXIT ret=%d\n", ret);
 	return ret;
 }
 
 void mxc_isi_pipe_release(struct mxc_isi_pipe *pipe)
 {
+	dev_dbg(pipe->isi->dev, "mxc_isi_pipe_release: ENTER\n");
+
 	mxc_isi_channel_release(pipe);
 	mxc_isi_channel_unchain(pipe);
+
+	dev_dbg(pipe->isi->dev, "mxc_isi_pipe_release: EXIT\n");
 }

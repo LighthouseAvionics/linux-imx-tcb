@@ -31,6 +31,9 @@ static void mxc_imx8_gasket_enable(struct mxc_isi_dev *isi,
 {
 	u32 val;
 
+	dev_dbg(isi->dev, "mxc_imx8_gasket_enable: ENTER port=%u width=%u height=%u dt=0x%x\n",
+		 port, fmt->width, fmt->height, fd->entry[0].bus.csi2.dt);
+
 	regmap_write(isi->gasket, GASKET_BASE(port) + GASKET_HSIZE, fmt->width);
 	regmap_write(isi->gasket, GASKET_BASE(port) + GASKET_VSIZE, fmt->height);
 
@@ -40,12 +43,16 @@ static void mxc_imx8_gasket_enable(struct mxc_isi_dev *isi,
 
 	val |= GASKET_CTRL_ENABLE;
 	regmap_write(isi->gasket, GASKET_BASE(port) + GASKET_CTRL, val);
+
+	dev_dbg(isi->dev, "mxc_imx8_gasket_enable: EXIT val=0x%x\n", val);
 }
 
 static void mxc_imx8_gasket_disable(struct mxc_isi_dev *isi,
 				    const unsigned int port)
 {
+	dev_dbg(isi->dev, "mxc_imx8_gasket_disable: ENTER port=%u\n", port);
 	regmap_write(isi->gasket, GASKET_BASE(port) + GASKET_CTRL, 0);
+	dev_dbg(isi->dev, "mxc_imx8_gasket_disable: EXIT\n");
 }
 
 const struct mxc_gasket_ops mxc_imx8_gasket_ops = {
@@ -69,6 +76,9 @@ static void mxc_imx93_gasket_enable(struct mxc_isi_dev *isi,
 {
 	u32 val;
 
+	dev_dbg(isi->dev, "mxc_imx93_gasket_enable: ENTER port=%u dt=0x%x\n",
+		 port, fd->entry[0].bus.csi2.dt);
+
 	val = DISP_MIX_CAMERA_MUX_DATA_TYPE(fd->entry[0].bus.csi2.dt);
 	val |= DISP_MIX_CAMERA_MUX_GASKET_ENABLE;
 
@@ -77,12 +87,16 @@ static void mxc_imx93_gasket_enable(struct mxc_isi_dev *isi,
 		val |= DISP_MIX_CAMERA_MUX_GASKET_SRC;
 
 	regmap_write(isi->gasket, DISP_MIX_CAMERA_MUX, val);
+
+	dev_dbg(isi->dev, "mxc_imx93_gasket_enable: EXIT val=0x%x\n", val);
 }
 
 static void mxc_imx93_gasket_disable(struct mxc_isi_dev *isi,
 				     unsigned int port)
 {
+	dev_dbg(isi->dev, "mxc_imx93_gasket_disable: ENTER port=%u\n", port);
 	regmap_write(isi->gasket, DISP_MIX_CAMERA_MUX, 0);
+	dev_dbg(isi->dev, "mxc_imx93_gasket_disable: EXIT\n");
 }
 
 const struct mxc_gasket_ops mxc_imx93_gasket_ops = {

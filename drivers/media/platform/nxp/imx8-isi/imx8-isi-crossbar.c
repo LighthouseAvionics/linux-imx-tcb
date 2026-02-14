@@ -38,8 +38,12 @@ static int mxc_isi_crossbar_gasket_enable(struct mxc_isi_crossbar *xbar,
 	unsigned int stream;
 	int ret;
 
-	if (!gasket_ops)
+	dev_dbg(isi->dev, "mxc_isi_crossbar_gasket_enable: ENTER port=%u\n", port);
+
+	if (!gasket_ops) {
+		dev_dbg(isi->dev, "mxc_isi_crossbar_gasket_enable: EXIT ret=0 (no gasket_ops)\n");
 		return 0;
+	}
 
 	/*
 	 * Configure and enable the gasket with the frame size and CSI-2 data
@@ -52,6 +56,7 @@ static int mxc_isi_crossbar_gasket_enable(struct mxc_isi_crossbar *xbar,
 		dev_err(isi->dev,
 			"failed to get frame descriptor from '%s':%u: %d\n",
 			remote_sd->name, remote_pad, ret);
+		dev_dbg(isi->dev, "mxc_isi_crossbar_gasket_enable: EXIT ret=%d\n", ret);
 		return ret;
 	}
 
@@ -61,10 +66,13 @@ static int mxc_isi_crossbar_gasket_enable(struct mxc_isi_crossbar *xbar,
 	 */
 	stream = fd.num_entries > 0 ? fd.entry[0].stream : 0;
 	fmt = v4l2_subdev_state_get_format(state, port, stream);
-	if (!fmt)
+	if (!fmt) {
+		dev_dbg(isi->dev, "mxc_isi_crossbar_gasket_enable: EXIT ret=-EINVAL (no fmt)\n");
 		return -EINVAL;
+	}
 
 	gasket_ops->enable(isi, &fd, fmt, port);
+	dev_dbg(isi->dev, "mxc_isi_crossbar_gasket_enable: EXIT ret=0\n");
 	return 0;
 }
 
@@ -74,10 +82,15 @@ static void mxc_isi_crossbar_gasket_disable(struct mxc_isi_crossbar *xbar,
 	struct mxc_isi_dev *isi = xbar->isi;
 	const struct mxc_gasket_ops *gasket_ops = isi->pdata->gasket_ops;
 
-	if (!gasket_ops)
+	dev_dbg(isi->dev, "mxc_isi_crossbar_gasket_disable: ENTER port=%u\n", port);
+
+	if (!gasket_ops) {
+		dev_dbg(isi->dev, "mxc_isi_crossbar_gasket_disable: EXIT (no gasket_ops)\n");
 		return;
+	}
 
 	gasket_ops->disable(isi, port);
+	dev_dbg(isi->dev, "mxc_isi_crossbar_gasket_disable: EXIT\n");
 }
 
 /* -----------------------------------------------------------------------------
@@ -103,10 +116,14 @@ static int __mxc_isi_crossbar_set_routing(struct v4l2_subdev *sd,
 	struct v4l2_subdev_route *route;
 	int ret;
 
+	dev_dbg(xbar->isi->dev, "__mxc_isi_crossbar_set_routing: ENTER\n");
+
 	ret = v4l2_subdev_routing_validate(sd, routing,
 					   V4L2_SUBDEV_ROUTING_NO_N_TO_1);
-	if (ret)
+	if (ret) {
+		dev_dbg(xbar->isi->dev, "__mxc_isi_crossbar_set_routing: EXIT ret=%d (validate failed)\n", ret);
 		return ret;
+	}
 
 	/* The memory input can be routed to the first pipeline only. */
 	for_each_active_route(&state->routing, route) {
@@ -116,12 +133,15 @@ static int __mxc_isi_crossbar_set_routing(struct v4l2_subdev *sd,
 				"invalid route from memory input (%u) to pipe %u\n",
 				route->sink_pad,
 				route->source_pad - xbar->num_sinks);
+			dev_dbg(xbar->isi->dev, "__mxc_isi_crossbar_set_routing: EXIT ret=-EINVAL\n");
 			return -EINVAL;
 		}
 	}
 
-	return v4l2_subdev_set_routing_with_fmt(sd, state, routing,
-						&mxc_isi_crossbar_default_format);
+	ret = v4l2_subdev_set_routing_with_fmt(sd, state, routing,
+					       &mxc_isi_crossbar_default_format);
+	dev_dbg(xbar->isi->dev, "__mxc_isi_crossbar_set_routing: EXIT ret=%d\n", ret);
+	return ret;
 }
 
 static struct v4l2_subdev *
@@ -136,6 +156,9 @@ mxc_isi_crossbar_xlate_streams(struct mxc_isi_crossbar *xbar,
 	struct media_pad *pad;
 	u64 sink_streams = 0;
 	int sink_pad = -1;
+
+	dev_dbg(xbar->isi->dev, "mxc_isi_crossbar_xlate_streams: ENTER source_pad=%u source_streams=0x%llx\n",
+		 source_pad, source_streams);
 
 	/*
 	 * Translate the source pad and streams to the sink side. The routing
@@ -158,6 +181,7 @@ mxc_isi_crossbar_xlate_streams(struct mxc_isi_crossbar *xbar,
 		dev_dbg(xbar->isi->dev,
 			"no stream connected to pipeline %u\n",
 			source_pad - xbar->num_sinks);
+		dev_dbg(xbar->isi->dev, "mxc_isi_crossbar_xlate_streams: EXIT err=-EPIPE (no sink_pad)\n");
 		return ERR_PTR(-EPIPE);
 	}
 
@@ -166,6 +190,7 @@ mxc_isi_crossbar_xlate_streams(struct mxc_isi_crossbar *xbar,
 		dev_err(xbar->isi->dev,
 			"no remote pad found for sink pad %u\n",
 			sink_pad);
+		dev_dbg(xbar->isi->dev, "mxc_isi_crossbar_xlate_streams: EXIT err=-EPIPE (no remote pad)\n");
 		return ERR_PTR(-EPIPE);
 	}
 
@@ -174,6 +199,7 @@ mxc_isi_crossbar_xlate_streams(struct mxc_isi_crossbar *xbar,
 		dev_dbg(xbar->isi->dev,
 			"no entity connected to crossbar input %u\n",
 			sink_pad);
+		dev_dbg(xbar->isi->dev, "mxc_isi_crossbar_xlate_streams: EXIT err=-EPIPE (no entity)\n");
 		return ERR_PTR(-EPIPE);
 	}
 
@@ -181,6 +207,8 @@ mxc_isi_crossbar_xlate_streams(struct mxc_isi_crossbar *xbar,
 	*__sink_streams = sink_streams;
 	*remote_pad = pad->index;
 
+	dev_dbg(xbar->isi->dev, "mxc_isi_crossbar_xlate_streams: EXIT sink_pad=%u sink_streams=0x%llx remote_pad=%u\n",
+		 sink_pad, sink_streams, pad->index);
 	return sd;
 }
 
@@ -192,6 +220,8 @@ static int mxc_isi_create_default_routing(struct mxc_isi_crossbar *xbar,
 	unsigned int index = 0;
 	int i, j;
 
+	dev_dbg(dev, "mxc_isi_create_default_routing: ENTER\n");
+
 	for_each_endpoint_of_node(dev->of_node, node) {
 		struct of_endpoint ep;
 
@@ -199,6 +229,7 @@ static int mxc_isi_create_default_routing(struct mxc_isi_crossbar *xbar,
 
 		if (ep.port > xbar->isi->pdata->num_ports) {
 			dev_err(dev, "Invalid port number(%d)\n", ep.port);
+			dev_dbg(dev, "mxc_isi_create_default_routing: EXIT ret=-EINVAL\n");
 			return -EINVAL;
 		}
 
@@ -226,6 +257,7 @@ static int mxc_isi_create_default_routing(struct mxc_isi_crossbar *xbar,
 		}
 	}
 
+	dev_dbg(dev, "mxc_isi_create_default_routing: EXIT ret=0\n");
 	return 0;
 }
 
@@ -237,6 +269,8 @@ static int mxc_isi_crossbar_init_state(struct v4l2_subdev *sd,
 	struct v4l2_subdev_route *routes;
 	int ret;
 
+	dev_dbg(xbar->isi->dev, "mxc_isi_crossbar_init_state: ENTER\n");
+
 	/*
 	 * Create a 1:N mapping between pixel link inputs and outputs to
 	 * pipelines by according to the number of pixel links inputs and
@@ -244,12 +278,15 @@ static int mxc_isi_crossbar_init_state(struct v4l2_subdev *sd,
 	 * to each pixel link input which connect to a remote device.
 	 */
 	routes = kcalloc(xbar->num_sources, sizeof(*routes), GFP_KERNEL);
-	if (!routes)
+	if (!routes) {
+		dev_dbg(xbar->isi->dev, "mxc_isi_crossbar_init_state: EXIT ret=-ENOMEM\n");
 		return -ENOMEM;
+	}
 
 	ret = mxc_isi_create_default_routing(xbar, routes);
 	if (ret < 0) {
 		kfree(routes);
+		dev_dbg(xbar->isi->dev, "mxc_isi_crossbar_init_state: EXIT ret=%d\n", ret);
 		return ret;
 	}
 
@@ -260,6 +297,7 @@ static int mxc_isi_crossbar_init_state(struct v4l2_subdev *sd,
 
 	kfree(routes);
 
+	dev_dbg(xbar->isi->dev, "mxc_isi_crossbar_init_state: EXIT ret=%d\n", ret);
 	return ret;
 }
 
@@ -270,6 +308,9 @@ static int mxc_isi_crossbar_enum_mbus_code(struct v4l2_subdev *sd,
 	struct mxc_isi_crossbar *xbar = to_isi_crossbar(sd);
 	const struct mxc_isi_bus_format_info *info;
 
+	dev_dbg(xbar->isi->dev, "mxc_isi_crossbar_enum_mbus_code: ENTER pad=%u index=%u\n",
+		 code->pad, code->index);
+
 	if (code->pad >= xbar->num_sinks) {
 		const struct v4l2_mbus_framefmt *format;
 
@@ -277,26 +318,34 @@ static int mxc_isi_crossbar_enum_mbus_code(struct v4l2_subdev *sd,
 		 * The media bus code on source pads is identical to the
 		 * connected sink pad.
 		 */
-		if (code->index > 0)
+		if (code->index > 0) {
+			dev_dbg(xbar->isi->dev, "mxc_isi_crossbar_enum_mbus_code: EXIT ret=-EINVAL (index>0)\n");
 			return -EINVAL;
+		}
 
 		format = v4l2_subdev_state_get_opposite_stream_format(state,
 								      code->pad,
 								      code->stream);
-		if (!format)
+		if (!format) {
+			dev_dbg(xbar->isi->dev, "mxc_isi_crossbar_enum_mbus_code: EXIT ret=-EINVAL (no format)\n");
 			return -EINVAL;
+		}
 
 		code->code = format->code;
 
+		dev_dbg(xbar->isi->dev, "mxc_isi_crossbar_enum_mbus_code: EXIT ret=0 code=0x%x\n", code->code);
 		return 0;
 	}
 
 	info = mxc_isi_bus_format_by_index(code->index, MXC_ISI_PIPE_PAD_SINK);
-	if (!info)
+	if (!info) {
+		dev_dbg(xbar->isi->dev, "mxc_isi_crossbar_enum_mbus_code: EXIT ret=-EINVAL (no info)\n");
 		return -EINVAL;
+	}
 
 	code->code = info->mbus_code;
 
+	dev_dbg(xbar->isi->dev, "mxc_isi_crossbar_enum_mbus_code: EXIT ret=0 code=0x%x\n", code->code);
 	return 0;
 }
 
@@ -308,16 +357,23 @@ static int mxc_isi_crossbar_set_fmt(struct v4l2_subdev *sd,
 	struct v4l2_mbus_framefmt *sink_fmt;
 	struct v4l2_subdev_route *route;
 
+	dev_dbg(xbar->isi->dev, "mxc_isi_crossbar_set_fmt: ENTER pad=%u\n", fmt->pad);
+
 	if (fmt->which == V4L2_SUBDEV_FORMAT_ACTIVE &&
-	    media_pad_is_streaming(&xbar->pads[fmt->pad]))
+	    media_pad_is_streaming(&xbar->pads[fmt->pad])) {
+		dev_dbg(xbar->isi->dev, "mxc_isi_crossbar_set_fmt: EXIT ret=-EBUSY\n");
 		return -EBUSY;
+	}
 
 	/*
 	 * The source pad format is always identical to the sink pad format and
 	 * can't be modified.
 	 */
-	if (fmt->pad >= xbar->num_sinks)
-		return v4l2_subdev_get_fmt(sd, state, fmt);
+	if (fmt->pad >= xbar->num_sinks) {
+		int ret = v4l2_subdev_get_fmt(sd, state, fmt);
+		dev_dbg(xbar->isi->dev, "mxc_isi_crossbar_set_fmt: EXIT ret=%d (source pad)\n", ret);
+		return ret;
+	}
 
 	/* Validate the requested format. */
 	if (!mxc_isi_bus_format_by_code(fmt->format.code, MXC_ISI_PIPE_PAD_SINK))
@@ -334,8 +390,10 @@ static int mxc_isi_crossbar_set_fmt(struct v4l2_subdev *sd,
 	 * streams.
 	 */
 	sink_fmt = v4l2_subdev_state_get_format(state, fmt->pad, fmt->stream);
-	if (!sink_fmt)
+	if (!sink_fmt) {
+		dev_dbg(xbar->isi->dev, "mxc_isi_crossbar_set_fmt: EXIT ret=-EINVAL (no sink_fmt)\n");
 		return -EINVAL;
+	}
 
 	*sink_fmt = fmt->format;
 
@@ -350,12 +408,15 @@ static int mxc_isi_crossbar_set_fmt(struct v4l2_subdev *sd,
 		source_fmt = v4l2_subdev_state_get_format(state,
 							  route->source_pad,
 							  route->source_stream);
-		if (!source_fmt)
+		if (!source_fmt) {
+			dev_dbg(xbar->isi->dev, "mxc_isi_crossbar_set_fmt: EXIT ret=-EINVAL (no source_fmt)\n");
 			return -EINVAL;
+		}
 
 		*source_fmt = fmt->format;
 	}
 
+	dev_dbg(xbar->isi->dev, "mxc_isi_crossbar_set_fmt: EXIT ret=0\n");
 	return 0;
 }
 
@@ -368,8 +429,12 @@ static int mxc_isi_get_frame_desc(struct v4l2_subdev *sd, unsigned int pad,
 	struct v4l2_subdev_state *state;
 	int ret;
 
-	if (pad < xbar->num_sinks)
+	dev_dbg(dev, "mxc_isi_get_frame_desc: ENTER pad=%u\n", pad);
+
+	if (pad < xbar->num_sinks) {
+		dev_dbg(dev, "mxc_isi_get_frame_desc: EXIT ret=-EINVAL (pad < num_sinks)\n");
 		return -EINVAL;
+	}
 
 	memset(fd, 0, sizeof(*fd));
 
@@ -434,6 +499,7 @@ static int mxc_isi_get_frame_desc(struct v4l2_subdev *sd, unsigned int pad,
 
 out_unlock:
 	v4l2_subdev_unlock_state(state);
+	dev_dbg(dev, "mxc_isi_get_frame_desc: EXIT ret=%d num_entries=%u\n", ret, fd->num_entries);
 	return ret;
 }
 
@@ -442,11 +508,20 @@ static int mxc_isi_crossbar_set_routing(struct v4l2_subdev *sd,
 					enum v4l2_subdev_format_whence which,
 					struct v4l2_subdev_krouting *routing)
 {
-	if (which == V4L2_SUBDEV_FORMAT_ACTIVE &&
-	    media_entity_is_streaming(&sd->entity))
-		return -EBUSY;
+	struct mxc_isi_crossbar *xbar = to_isi_crossbar(sd);
+	int ret;
 
-	return __mxc_isi_crossbar_set_routing(sd, state, routing);
+	dev_dbg(xbar->isi->dev, "mxc_isi_crossbar_set_routing: ENTER\n");
+
+	if (which == V4L2_SUBDEV_FORMAT_ACTIVE &&
+	    media_entity_is_streaming(&sd->entity)) {
+		dev_dbg(xbar->isi->dev, "mxc_isi_crossbar_set_routing: EXIT ret=-EBUSY\n");
+		return -EBUSY;
+	}
+
+	ret = __mxc_isi_crossbar_set_routing(sd, state, routing);
+	dev_dbg(xbar->isi->dev, "mxc_isi_crossbar_set_routing: EXIT ret=%d\n", ret);
+	return ret;
 }
 
 static int mxc_isi_crossbar_enable_streams(struct v4l2_subdev *sd,
@@ -462,7 +537,7 @@ static int mxc_isi_crossbar_enable_streams(struct v4l2_subdev *sd,
 	u8 stream_index;
 	int ret;
 
-	dev_info(xbar->isi->dev, "ISI-XBAR: enable_streams BEGIN, pad=%u, streams_mask=0x%llx\n",
+	dev_dbg(xbar->isi->dev, "ISI-XBAR: enable_streams BEGIN, pad=%u, streams_mask=0x%llx\n",
 		 pad, streams_mask);
 
 	remote_sd = mxc_isi_crossbar_xlate_streams(xbar, state, pad, streams_mask,
@@ -473,7 +548,7 @@ static int mxc_isi_crossbar_enable_streams(struct v4l2_subdev *sd,
 		return PTR_ERR(remote_sd);
 	}
 
-	dev_info(xbar->isi->dev, "ISI-XBAR: remote_sd=%s, sink_pad=%u, sink_streams=0x%llx, remote_pad=%u\n",
+	dev_dbg(xbar->isi->dev, "ISI-XBAR: remote_sd=%s, sink_pad=%u, sink_streams=0x%llx, remote_pad=%u\n",
 		 remote_sd->name, sink_pad, sink_streams, remote_pad);
 
 	input = &xbar->inputs[sink_pad];
@@ -483,7 +558,7 @@ static int mxc_isi_crossbar_enable_streams(struct v4l2_subdev *sd,
 	 * streams.
 	 */
 	if (!input->enabled_streams) {
-		dev_info(xbar->isi->dev, "ISI-XBAR: First stream, enabling gasket\n");
+		dev_dbg(xbar->isi->dev, "ISI-XBAR: First stream, enabling gasket\n");
 		ret = mxc_isi_crossbar_gasket_enable(xbar, state, remote_sd,
 						     remote_pad, sink_pad);
 		if (ret) {
@@ -499,12 +574,12 @@ static int mxc_isi_crossbar_enable_streams(struct v4l2_subdev *sd,
 	 * directly to support ISI stream duplicated feature
 	 */
 	if (input->enabled_streams & sink_streams) {
-		dev_info(xbar->isi->dev, "ISI-XBAR: Stream already enabled, incrementing count\n");
+		dev_dbg(xbar->isi->dev, "ISI-XBAR: Stream already enabled, incrementing count\n");
 		input->enabled_count[(stream_index - 1)]++;
 		return 0;
 	}
 
-	dev_info(xbar->isi->dev, "ISI-XBAR: Enabling remote subdev streams\n");
+	dev_dbg(xbar->isi->dev, "ISI-XBAR: Enabling remote subdev streams\n");
 	ret = v4l2_subdev_enable_streams(remote_sd, remote_pad, sink_streams);
 	if (ret < 0) {
 		dev_err(xbar->isi->dev, "ISI-XBAR: v4l2_subdev_enable_streams FAILED ret=%d\n", ret);
@@ -516,7 +591,7 @@ static int mxc_isi_crossbar_enable_streams(struct v4l2_subdev *sd,
 	input->enabled_streams |= sink_streams;
 	input->enabled_count[(stream_index - 1)]++;
 
-	dev_info(xbar->isi->dev, "ISI-XBAR: enable_streams SUCCESS, enabled_streams=0x%llx\n",
+	dev_dbg(xbar->isi->dev, "ISI-XBAR: enable_streams SUCCESS, enabled_streams=0x%llx\n",
 		 input->enabled_streams);
 	return 0;
 }
@@ -534,11 +609,17 @@ static int mxc_isi_crossbar_disable_streams(struct v4l2_subdev *sd,
 	u8 stream_index;
 	int ret = 0;
 
+	dev_dbg(xbar->isi->dev, "mxc_isi_crossbar_disable_streams: ENTER pad=%u streams_mask=0x%llx\n",
+		 pad, streams_mask);
+
 	remote_sd = mxc_isi_crossbar_xlate_streams(xbar, state, pad, streams_mask,
 						   &sink_pad, &sink_streams,
 						   &remote_pad);
-	if (IS_ERR(remote_sd))
+	if (IS_ERR(remote_sd)) {
+		dev_dbg(xbar->isi->dev, "mxc_isi_crossbar_disable_streams: EXIT ret=%ld (xlate failed)\n",
+			 PTR_ERR(remote_sd));
 		return PTR_ERR(remote_sd);
+	}
 
 	input = &xbar->inputs[sink_pad];
 	stream_index = clamp_t(u8, ffs(sink_streams), 1, xbar->num_sources);
@@ -548,8 +629,10 @@ static int mxc_isi_crossbar_disable_streams(struct v4l2_subdev *sd,
 	 * decrease the stream counter and return directly.
 	 */
 	if (!(input->enabled_streams & sink_streams) ||
-	    --input->enabled_count[(stream_index - 1)])
+	    --input->enabled_count[(stream_index - 1)]) {
+		dev_dbg(xbar->isi->dev, "mxc_isi_crossbar_disable_streams: EXIT ret=0 (counter not zero)\n");
 		return 0;
+	}
 
 	ret = v4l2_subdev_disable_streams(remote_sd, remote_pad, sink_streams);
 	if (ret)
@@ -563,6 +646,7 @@ static int mxc_isi_crossbar_disable_streams(struct v4l2_subdev *sd,
 	if (!input->enabled_streams)
 		mxc_isi_crossbar_gasket_disable(xbar, sink_pad);
 
+	dev_dbg(xbar->isi->dev, "mxc_isi_crossbar_disable_streams: EXIT ret=%d\n", ret);
 	return ret;
 }
 
@@ -598,6 +682,8 @@ static int mxc_isi_input_stream_alloc(struct mxc_isi_crossbar *xbar)
 {
 	unsigned int i;
 
+	dev_dbg(xbar->isi->dev, "mxc_isi_input_stream_alloc: ENTER\n");
+
 	/*
 	 * Track per-stream enable counts to support multiplexed streams
 	 */
@@ -610,10 +696,12 @@ static int mxc_isi_input_stream_alloc(struct mxc_isi_crossbar *xbar)
 		if (!input->enabled_count) {
 			dev_err(xbar->isi->dev,
 				"failed to alloc memory for ISI input(%d)\n", i);
+			dev_dbg(xbar->isi->dev, "mxc_isi_input_stream_alloc: EXIT ret=-ENOMEM\n");
 			return -ENOMEM;
 		}
 	}
 
+	dev_dbg(xbar->isi->dev, "mxc_isi_input_stream_alloc: EXIT ret=0\n");
 	return 0;
 }
 
@@ -632,6 +720,8 @@ int mxc_isi_crossbar_init(struct mxc_isi_dev *isi)
 	unsigned int num_pads;
 	unsigned int i;
 	int ret;
+
+	dev_dbg(isi->dev, "mxc_isi_crossbar_init: ENTER\n");
 
 	xbar->isi = isi;
 
@@ -653,8 +743,10 @@ int mxc_isi_crossbar_init(struct mxc_isi_dev *isi)
 	num_pads = xbar->num_sinks + xbar->num_sources;
 
 	xbar->pads = kcalloc(num_pads, sizeof(*xbar->pads), GFP_KERNEL);
-	if (!xbar->pads)
+	if (!xbar->pads) {
+		dev_dbg(isi->dev, "mxc_isi_crossbar_init: EXIT ret=-ENOMEM (pads)\n");
 		return -ENOMEM;
+	}
 
 	xbar->inputs = kcalloc(xbar->num_sinks, sizeof(*xbar->inputs),
 			       GFP_KERNEL);
@@ -681,6 +773,7 @@ int mxc_isi_crossbar_init(struct mxc_isi_dev *isi)
 	if (ret < 0)
 		goto err_entity;
 
+	dev_dbg(isi->dev, "mxc_isi_crossbar_init: EXIT ret=0\n");
 	return 0;
 
 err_entity:
@@ -691,22 +784,32 @@ err_free:
 	kfree(xbar->pads);
 	kfree(xbar->inputs);
 
+	dev_dbg(isi->dev, "mxc_isi_crossbar_init: EXIT ret=%d\n", ret);
 	return ret;
 }
 
 void mxc_isi_crossbar_cleanup(struct mxc_isi_crossbar *xbar)
 {
+	dev_dbg(xbar->isi->dev, "mxc_isi_crossbar_cleanup: ENTER\n");
 	mxc_isi_input_stream_free(xbar);
 	media_entity_cleanup(&xbar->sd.entity);
 	kfree(xbar->pads);
 	kfree(xbar->inputs);
+	dev_dbg(xbar->isi->dev, "mxc_isi_crossbar_cleanup: EXIT\n");
 }
 
 int mxc_isi_crossbar_register(struct mxc_isi_crossbar *xbar)
 {
-	return v4l2_device_register_subdev(&xbar->isi->v4l2_dev, &xbar->sd);
+	int ret;
+
+	dev_dbg(xbar->isi->dev, "mxc_isi_crossbar_register: ENTER\n");
+	ret = v4l2_device_register_subdev(&xbar->isi->v4l2_dev, &xbar->sd);
+	dev_dbg(xbar->isi->dev, "mxc_isi_crossbar_register: EXIT ret=%d\n", ret);
+	return ret;
 }
 
 void mxc_isi_crossbar_unregister(struct mxc_isi_crossbar *xbar)
 {
+	dev_dbg(xbar->isi->dev, "mxc_isi_crossbar_unregister: ENTER\n");
+	dev_dbg(xbar->isi->dev, "mxc_isi_crossbar_unregister: EXIT\n");
 }

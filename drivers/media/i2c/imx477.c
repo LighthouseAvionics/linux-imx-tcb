@@ -152,6 +152,7 @@ struct imx477 {
 	const struct imx477_mode *cur_mode;
 	struct mutex mutex;
 	struct dentry *debugfs_dir;
+	u16 debugfs_reg_addr;
 };
 
 static const s64 link_freq[] = {
@@ -349,32 +350,32 @@ static const struct imx477_reg mode_2028x1520_regs[] = {
 	{0x3f50, 0x00},
 	{0x3f56, 0x00},
 	{0x3f57, 0x56},
-	{0x3c0a, 0x73},  /* D-PHY timing (conservative for 400 Mbps) */
-	{0x3c0b, 0x64},
-	{0x3c0c, 0x5f},
-	{0x3c0d, 0x00},
-	{0x3c0e, 0x00},
-	{0x3c0f, 0x00},
-	{0x3c10, 0xa4},
-	{0x3c11, 0x02},
+	{0x3c0a, 0x5a},
+	{0x3c0b, 0x55},
+	{0x3c0c, 0x28},
+	{0x3c0d, 0x07},
+	{0x3c0e, 0x07},
+	{0x3c0f, 0x02},
+	{0x3c10, 0xa0},
+	{0x3c11, 0x01},
 	{0x3c12, 0x00},
 	{0x3c13, 0x03},
-	{0x3c14, 0x80},
-	{0x3c15, 0x04},
-	{0x3c16, 0x15},
-	{0x3c17, 0x15},
-	{0x3c18, 0x15},
-	{0x3c19, 0x15},
-	{0x3c1a, 0x15},
-	{0x3c1b, 0x15},
-	{0x3c1c, 0x06},
-	{0x3c1d, 0x06},
-	{0x3c1e, 0x06},
-	{0x3c1f, 0x06},
-	{0x3c20, 0x06},
-	{0x3c21, 0x06},
+	{0x3c14, 0x00},
+	{0x3c15, 0x00},
+	{0x3c16, 0x0c},
+	{0x3c17, 0x0c},
+	{0x3c18, 0x0c},
+	{0x3c19, 0x0c},
+	{0x3c1a, 0x0c},
+	{0x3c1b, 0x0c},
+	{0x3c1c, 0x00},
+	{0x3c1d, 0x00},
+	{0x3c1e, 0x00},
+	{0x3c1f, 0x00},
+	{0x3c20, 0x00},
+	{0x3c21, 0x00},
 	{0x3c22, 0x3f},
-	{0x3c23, 0x0a},
+{0x3c23, 0x0a},
 	{0x3e35, 0x01},
 	{0x3f4a, 0x01},
 	{0x3f4b, 0x7f},
@@ -392,7 +393,7 @@ static const struct imx477_reg mode_2028x1520_regs[] = {
 	{0x0214, 0x01},
 	{0x0215, 0x00},
 	{0xbcf1, 0x00},
-	{0xe000, 0x00},  /* FRAME_BLANKSTOP_CL: keep clock active (LP-11) */
+	{0xe000, 0x01},  /* FRAME_BLANKSTOP_CL: keep clock active (LP-11) */
 };
 
 /* Supported sensor mode configurations */
@@ -505,24 +506,15 @@ static int imx477_write_regs(struct imx477 *imx477,
 	unsigned int i;
 	int ret;
 
-	dev_info(imx477->dev, "Writing %u mode registers\n", len);
-
 	for (i = 0; i < len; i++) {
 		ret = imx477_write_reg(imx477, regs[i].address, 1, regs[i].val);
 		if (ret) {
-			dev_err(imx477->dev, "Failed to write reg 0x%04X = 0x%02X\n",
-				regs[i].address, regs[i].val);
+			dev_err(imx477->dev, "reg write failed: 0x%04X error=%d\n",
+				regs[i].address, ret);
 			return ret;
-		}
-		/* Log critical registers */
-		if (regs[i].address == 0x0114 || regs[i].address == 0x0340 ||
-		    regs[i].address == 0x030e || regs[i].address == 0x0900) {
-			dev_info(imx477->dev, "Wrote reg 0x%04X = 0x%02X\n",
-				 regs[i].address, regs[i].val);
 		}
 	}
 
-	dev_info(imx477->dev, "Mode registers written successfully\n");
 	return 0;
 }
 
@@ -538,16 +530,24 @@ static int imx477_update_controls(struct imx477 *imx477,
 {
 	int ret;
 
+	dev_dbg(imx477->dev, "imx477_update_controls: ENTER\n");
+
 	ret = __v4l2_ctrl_s_ctrl(imx477->link_freq_ctrl, mode->link_freq_idx);
-	if (ret)
+	if (ret) {
+		dev_dbg(imx477->dev, "imx477_update_controls: EXIT ret=%d\n", ret);
 		return ret;
+	}
 
 	ret = __v4l2_ctrl_s_ctrl(imx477->hblank_ctrl, mode->hblank);
-	if (ret)
+	if (ret) {
+		dev_dbg(imx477->dev, "imx477_update_controls: EXIT ret=%d\n", ret);
 		return ret;
+	}
 
-	return __v4l2_ctrl_modify_range(imx477->vblank_ctrl, mode->vblank_min,
+	ret = __v4l2_ctrl_modify_range(imx477->vblank_ctrl, mode->vblank_min,
 					mode->vblank_max, 1, mode->vblank);
+	dev_dbg(imx477->dev, "imx477_update_controls: EXIT ret=%d\n", ret);
+	return ret;
 }
 
 /**
@@ -563,14 +563,19 @@ static int imx477_update_exp_gain(struct imx477 *imx477, u32 exposure, u32 gain)
 	u32 lpfr;
 	int ret;
 
+	dev_dbg(imx477->dev, "imx477_update_exp_gain: ENTER exposure=%u gain=%u\n",
+		 exposure, gain);
+
 	lpfr = imx477->vblank + imx477->cur_mode->height;
 
 	dev_dbg(imx477->dev, "Set exp %u, analog gain %u, lpfr %u\n",
-		exposure, gain, lpfr);
+		 exposure, gain, lpfr);
 
 	ret = imx477_write_reg(imx477, IMX477_REG_HOLD, 1, 1);
-	if (ret)
+	if (ret) {
+		dev_dbg(imx477->dev, "imx477_update_exp_gain: EXIT ret=%d\n", ret);
 		return ret;
+	}
 
 	ret = imx477_write_reg(imx477, IMX477_REG_LPFR, 2, lpfr);
 	if (ret)
@@ -585,6 +590,7 @@ static int imx477_update_exp_gain(struct imx477 *imx477, u32 exposure, u32 gain)
 error_release_group_hold:
 	imx477_write_reg(imx477, IMX477_REG_HOLD, 1, 0);
 
+	dev_dbg(imx477->dev, "imx477_update_exp_gain: EXIT ret=%d\n", ret);
 	return ret;
 }
 
@@ -608,13 +614,15 @@ static int imx477_set_ctrl(struct v4l2_ctrl *ctrl)
 	u32 exposure;
 	int ret;
 
+	dev_dbg(imx477->dev, "imx477_set_ctrl: ENTER ctrl_id=0x%x\n", ctrl->id);
+
 	switch (ctrl->id) {
 	case V4L2_CID_VBLANK:
 		imx477->vblank = imx477->vblank_ctrl->val;
 
 		dev_dbg(imx477->dev, "Received vblank %u, new lpfr %u\n",
-			imx477->vblank,
-			imx477->vblank + imx477->cur_mode->height);
+			 imx477->vblank,
+			 imx477->vblank + imx477->cur_mode->height);
 
 		ret = __v4l2_ctrl_modify_range(imx477->exp_ctrl,
 					       IMX477_EXPOSURE_MIN,
@@ -625,14 +633,16 @@ static int imx477_set_ctrl(struct v4l2_ctrl *ctrl)
 		break;
 	case V4L2_CID_EXPOSURE:
 		/* Set controls only if sensor is in power on state */
-		if (!pm_runtime_get_if_in_use(imx477->dev))
+		if (!pm_runtime_get_if_in_use(imx477->dev)) {
+			dev_dbg(imx477->dev, "imx477_set_ctrl: EXIT ret=0 (not powered)\n");
 			return 0;
+		}
 
 		exposure = ctrl->val;
 		analog_gain = imx477->again_ctrl->val;
 
 		dev_dbg(imx477->dev, "Received exp %u, analog gain %u\n",
-			exposure, analog_gain);
+			 exposure, analog_gain);
 
 		ret = imx477_update_exp_gain(imx477, exposure, analog_gain);
 
@@ -644,6 +654,7 @@ static int imx477_set_ctrl(struct v4l2_ctrl *ctrl)
 		ret = -EINVAL;
 	}
 
+	dev_dbg(imx477->dev, "imx477_set_ctrl: EXIT ret=%d\n", ret);
 	return ret;
 }
 
@@ -664,11 +675,18 @@ static int imx477_enum_mbus_code(struct v4l2_subdev *sd,
 				 struct v4l2_subdev_state *sd_state,
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
-	if (code->index > 0)
+	struct imx477 *imx477 = to_imx477(sd);
+
+	dev_dbg(imx477->dev, "imx477_enum_mbus_code: ENTER index=%u\n", code->index);
+
+	if (code->index > 0) {
+		dev_dbg(imx477->dev, "imx477_enum_mbus_code: EXIT ret=-EINVAL\n");
 		return -EINVAL;
+	}
 
 	code->code = supported_mode.code;
 
+	dev_dbg(imx477->dev, "imx477_enum_mbus_code: EXIT ret=0\n");
 	return 0;
 }
 
@@ -684,17 +702,27 @@ static int imx477_enum_frame_size(struct v4l2_subdev *sd,
 				  struct v4l2_subdev_state *sd_state,
 				  struct v4l2_subdev_frame_size_enum *fsize)
 {
-	if (fsize->index > 0)
-		return -EINVAL;
+	struct imx477 *imx477 = to_imx477(sd);
 
-	if (fsize->code != supported_mode.code)
+	dev_dbg(imx477->dev, "imx477_enum_frame_size: ENTER index=%u code=0x%x\n",
+		 fsize->index, fsize->code);
+
+	if (fsize->index > 0) {
+		dev_dbg(imx477->dev, "imx477_enum_frame_size: EXIT ret=-EINVAL (index)\n");
 		return -EINVAL;
+	}
+
+	if (fsize->code != supported_mode.code) {
+		dev_dbg(imx477->dev, "imx477_enum_frame_size: EXIT ret=-EINVAL (code)\n");
+		return -EINVAL;
+	}
 
 	fsize->min_width = supported_mode.width;
 	fsize->max_width = fsize->min_width;
 	fsize->min_height = supported_mode.height;
 	fsize->max_height = fsize->min_height;
 
+	dev_dbg(imx477->dev, "imx477_enum_frame_size: EXIT ret=0\n");
 	return 0;
 }
 
@@ -709,6 +737,8 @@ static void imx477_fill_pad_format(struct imx477 *imx477,
 				   const struct imx477_mode *mode,
 				   struct v4l2_subdev_format *fmt)
 {
+	dev_dbg(imx477->dev, "imx477_fill_pad_format: ENTER\n");
+
 	fmt->format.width = mode->width;
 	fmt->format.height = mode->height;
 	fmt->format.code = mode->code;
@@ -717,6 +747,8 @@ static void imx477_fill_pad_format(struct imx477 *imx477,
 	fmt->format.ycbcr_enc = V4L2_YCBCR_ENC_DEFAULT;
 	fmt->format.quantization = V4L2_QUANTIZATION_DEFAULT;
 	fmt->format.xfer_func = V4L2_XFER_FUNC_NONE;
+
+	dev_dbg(imx477->dev, "imx477_fill_pad_format: EXIT\n");
 }
 
 /**
@@ -733,6 +765,8 @@ static int imx477_get_pad_format(struct v4l2_subdev *sd,
 {
 	struct imx477 *imx477 = to_imx477(sd);
 
+	dev_dbg(imx477->dev, "imx477_get_pad_format: ENTER\n");
+
 	mutex_lock(&imx477->mutex);
 
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
@@ -746,6 +780,7 @@ static int imx477_get_pad_format(struct v4l2_subdev *sd,
 
 	mutex_unlock(&imx477->mutex);
 
+	dev_dbg(imx477->dev, "imx477_get_pad_format: EXIT ret=0\n");
 	return 0;
 }
 
@@ -765,6 +800,8 @@ static int imx477_set_pad_format(struct v4l2_subdev *sd,
 	const struct imx477_mode *mode;
 	int ret = 0;
 
+	dev_dbg(imx477->dev, "imx477_set_pad_format: ENTER\n");
+
 	mutex_lock(&imx477->mutex);
 
 	mode = &supported_mode;
@@ -783,6 +820,7 @@ static int imx477_set_pad_format(struct v4l2_subdev *sd,
 
 	mutex_unlock(&imx477->mutex);
 
+	dev_dbg(imx477->dev, "imx477_set_pad_format: EXIT ret=%d\n", ret);
 	return ret;
 }
 
@@ -800,8 +838,12 @@ static int imx477_get_frame_desc(struct v4l2_subdev *sd, unsigned int pad,
 	struct imx477 *imx477 = to_imx477(sd);
 	const struct imx477_mode *mode = imx477->cur_mode;
 
-	if (pad != 0)
+	dev_dbg(imx477->dev, "imx477_get_frame_desc: ENTER pad=%u\n", pad);
+
+	if (pad != 0) {
+		dev_dbg(imx477->dev, "imx477_get_frame_desc: EXIT ret=-EINVAL\n");
 		return -EINVAL;
+	}
 
 	fd->type = V4L2_MBUS_FRAME_DESC_TYPE_CSI2;
 	fd->num_entries = 1;
@@ -815,6 +857,7 @@ static int imx477_get_frame_desc(struct v4l2_subdev *sd, unsigned int pad,
 	fd->entry[0].bus.csi2.vc = 0;
 	fd->entry[0].bus.csi2.dt = 0x2b; /* RAW10 */
 
+	dev_dbg(imx477->dev, "imx477_get_frame_desc: EXIT ret=0\n");
 	return 0;
 }
 
@@ -830,11 +873,16 @@ static int imx477_init_state(struct v4l2_subdev *sd,
 {
 	struct imx477 *imx477 = to_imx477(sd);
 	struct v4l2_subdev_format fmt = { 0 };
+	int ret;
+
+	dev_dbg(imx477->dev, "imx477_init_state: ENTER\n");
 
 	fmt.which = sd_state ? V4L2_SUBDEV_FORMAT_TRY : V4L2_SUBDEV_FORMAT_ACTIVE;
 	imx477_fill_pad_format(imx477, &supported_mode, &fmt);
 
-	return imx477_set_pad_format(sd, sd_state, &fmt);
+	ret = imx477_set_pad_format(sd, sd_state, &fmt);
+	dev_dbg(imx477->dev, "imx477_init_state: EXIT ret=%d\n", ret);
+	return ret;
 }
 
 /**
@@ -848,46 +896,66 @@ static int imx477_start_streaming(struct imx477 *imx477)
 	const struct imx477_reg_list *reg_list;
 	int ret;
 
-	dev_info(imx477->dev, "=== START STREAMING BEGIN ===\n");
-	dev_info(imx477->dev, "Mode: %ux%u, code=0x%x\n",
+	dev_dbg(imx477->dev, "imx477_start_streaming: ENTER\n");
+	dev_dbg(imx477->dev, "=== START STREAMING BEGIN ===\n");
+	dev_dbg(imx477->dev, "Mode: %ux%u, code=0x%x\n",
 		 imx477->cur_mode->width, imx477->cur_mode->height,
 		 imx477->cur_mode->code);
 
+	/* CRITICAL: Sensor needs settling time after power-on before I2C writes */
+	dev_dbg(imx477->dev, "Waiting 50ms for sensor I2C to be ready...\n");
+	msleep(50);
+
+	dev_dbg(imx477->dev, "Putting sensor in standby mode...\n");
+	ret = imx477_write_reg(imx477, IMX477_REG_MODE_SELECT,
+			       1, IMX477_MODE_STANDBY);
+	if (ret) {
+		dev_err(imx477->dev, "fail to set standby mode\n");
+		dev_dbg(imx477->dev, "imx477_start_streaming: EXIT ret=%d\n", ret);
+		return ret;
+	}
+
+	usleep_range(1000, 2000);
+
 	/* Write sensor mode registers */
 	reg_list = &imx477->cur_mode->reg_list;
-	dev_info(imx477->dev, "Writing %u mode registers...\n", reg_list->num_of_regs);
+	dev_dbg(imx477->dev, "Writing %u mode registers...\n", reg_list->num_of_regs);
 	ret = imx477_write_regs(imx477, reg_list->regs,
 				reg_list->num_of_regs);
 	if (ret) {
 		dev_err(imx477->dev, "fail to write initial registers\n");
+		dev_dbg(imx477->dev, "imx477_start_streaming: EXIT ret=%d\n", ret);
 		return ret;
 	}
 
 	/* Setup handler will write actual exposure and gain */
-	dev_info(imx477->dev, "Setting up control handler...\n");
+	dev_dbg(imx477->dev, "Setting up control handler...\n");
 	ret =  __v4l2_ctrl_handler_setup(imx477->sd.ctrl_handler);
 	if (ret) {
 		dev_err(imx477->dev, "fail to setup handler\n");
+		dev_dbg(imx477->dev, "imx477_start_streaming: EXIT ret=%d\n", ret);
 		return ret;
 	}
 
 	/* Delay is required before streaming*/
-	dev_info(imx477->dev, "Waiting before stream start...\n");
+	dev_dbg(imx477->dev, "Waiting before stream start...\n");
 	usleep_range(20000, 25000);  /* Increased delay */
 
 	/* Start streaming */
-	dev_info(imx477->dev, "Writing MODE_SELECT = STREAMING (0x01)\n");
+	dev_dbg(imx477->dev, "Writing MODE_SELECT = STREAMING (0x01)\n");
 	ret = imx477_write_reg(imx477, IMX477_REG_MODE_SELECT,
 			       1, IMX477_MODE_STREAMING);
 	if (ret) {
 		dev_err(imx477->dev, "fail to start streaming\n");
+		dev_dbg(imx477->dev, "imx477_start_streaming: EXIT ret=%d\n", ret);
 		return ret;
 	}
 
 	/* Give sensor time to start D-PHY and reach HS mode */
 	usleep_range(30000, 35000);
 
-	dev_info(imx477->dev, "=== START STREAMING SUCCESS ===\n");
+	dev_dbg(imx477->dev, "=== START STREAMING SUCCESS ===\n");
+	dev_dbg(imx477->dev, "imx477_start_streaming: EXIT ret=0\n");
 	return 0;
 }
 
@@ -899,9 +967,14 @@ static int imx477_start_streaming(struct imx477 *imx477)
  */
 static int imx477_stop_streaming(struct imx477 *imx477)
 {
-	dev_info(imx477->dev, "IMX477: Stopping sensor streaming\n");
-	return imx477_write_reg(imx477, IMX477_REG_MODE_SELECT,
-				1, IMX477_MODE_STANDBY);
+	int ret;
+
+	dev_dbg(imx477->dev, "imx477_stop_streaming: ENTER\n");
+	dev_dbg(imx477->dev, "IMX477: Stopping sensor streaming\n");
+	ret = imx477_write_reg(imx477, IMX477_REG_MODE_SELECT,
+			       1, IMX477_MODE_STANDBY);
+	dev_dbg(imx477->dev, "imx477_stop_streaming: EXIT ret=%d\n", ret);
+	return ret;
 }
 
 /**
@@ -920,11 +993,13 @@ static int imx477_enable_streams(struct v4l2_subdev *sd,
 	struct imx477 *imx477 = to_imx477(sd);
 	int ret;
 
-	dev_info(imx477->dev, "IMX477: enable_streams called, pad=%u, streams=0x%llx\n",
+	dev_dbg(imx477->dev, "imx477_enable_streams: ENTER pad=%u streams=0x%llx\n",
 		 pad, streams_mask);
 
-	if (pad != 0)
+	if (pad != 0) {
+		dev_dbg(imx477->dev, "imx477_enable_streams: EXIT ret=-EINVAL\n");
 		return -EINVAL;
+	}
 
 	mutex_lock(&imx477->mutex);
 
@@ -942,6 +1017,7 @@ static int imx477_enable_streams(struct v4l2_subdev *sd,
 
 unlock:
 	mutex_unlock(&imx477->mutex);
+	dev_dbg(imx477->dev, "imx477_enable_streams: EXIT ret=%d\n", ret);
 	return ret;
 }
 
@@ -960,17 +1036,20 @@ static int imx477_disable_streams(struct v4l2_subdev *sd,
 {
 	struct imx477 *imx477 = to_imx477(sd);
 
-	dev_info(imx477->dev, "IMX477: disable_streams called, pad=%u, streams=0x%llx\n",
+	dev_dbg(imx477->dev, "imx477_disable_streams: ENTER pad=%u streams=0x%llx\n",
 		 pad, streams_mask);
 
-	if (pad != 0)
+	if (pad != 0) {
+		dev_dbg(imx477->dev, "imx477_disable_streams: EXIT ret=-EINVAL\n");
 		return -EINVAL;
+	}
 
 	mutex_lock(&imx477->mutex);
 	imx477_stop_streaming(imx477);
 	pm_runtime_put(imx477->dev);
 	mutex_unlock(&imx477->mutex);
 
+	dev_dbg(imx477->dev, "imx477_disable_streams: EXIT ret=0\n");
 	return 0;
 }
 
@@ -986,18 +1065,18 @@ static int imx477_set_stream(struct v4l2_subdev *sd, int enable)
 	struct imx477 *imx477 = to_imx477(sd);
 	int ret;
 
-	dev_info(imx477->dev, "IMX477: set_stream called, enable=%d\n", enable);
+	dev_dbg(imx477->dev, "imx477_set_stream: ENTER enable=%d\n", enable);
 
 	mutex_lock(&imx477->mutex);
 
 	if (enable) {
-		dev_info(imx477->dev, "IMX477: Resuming device via pm_runtime...\n");
+		dev_dbg(imx477->dev, "IMX477: Resuming device via pm_runtime...\n");
 		ret = pm_runtime_resume_and_get(imx477->dev);
 		if (ret) {
 			dev_err(imx477->dev, "pm_runtime_resume_and_get failed: %d\n", ret);
 			goto error_unlock;
 		}
-		dev_info(imx477->dev, "IMX477: Device resumed, calling start_streaming\n");
+		dev_dbg(imx477->dev, "IMX477: Device resumed, calling start_streaming\n");
 
 		ret = imx477_start_streaming(imx477);
 		if (ret) {
@@ -1005,15 +1084,15 @@ static int imx477_set_stream(struct v4l2_subdev *sd, int enable)
 			goto error_power_off;
 		}
 	} else {
-		dev_info(imx477->dev, "IMX477: Stopping stream\n");
+		dev_dbg(imx477->dev, "IMX477: Stopping stream\n");
 		imx477_stop_streaming(imx477);
 		pm_runtime_put(imx477->dev);
-		dev_info(imx477->dev, "IMX477: Stream stopped\n");
+		dev_dbg(imx477->dev, "IMX477: Stream stopped\n");
 	}
 
 	mutex_unlock(&imx477->mutex);
 
-	dev_info(imx477->dev, "IMX477: set_stream complete, enable=%d\n", enable);
+	dev_dbg(imx477->dev, "imx477_set_stream: EXIT ret=0\n");
 	return 0;
 
 error_power_off:
@@ -1021,7 +1100,7 @@ error_power_off:
 error_unlock:
 	mutex_unlock(&imx477->mutex);
 
-	dev_err(imx477->dev, "IMX477: set_stream FAILED, enable=%d, ret=%d\n", enable, ret);
+	dev_dbg(imx477->dev, "imx477_set_stream: EXIT ret=%d\n", ret);
 	return ret;
 }
 
@@ -1036,23 +1115,25 @@ static int imx477_detect(struct imx477 *imx477)
 	int ret;
 	u32 val;
 
-	dev_info(imx477->dev, "IMX477: Detecting sensor...\n");
+	dev_dbg(imx477->dev, "imx477_detect: ENTER\n");
 
 	ret = imx477_read_reg(imx477, IMX477_REG_ID, 2, &val);
 	if (ret) {
 		dev_err(imx477->dev, "Failed to read chip ID: %d\n", ret);
+		dev_dbg(imx477->dev, "imx477_detect: EXIT ret=%d\n", ret);
 		return ret;
 	}
 
-	dev_info(imx477->dev, "Read chip ID: 0x%04X (expected 0x%04X)\n", val, IMX477_ID);
+	dev_dbg(imx477->dev, "Read chip ID: 0x%04X (expected 0x%04X)\n", val, IMX477_ID);
 
 	if (val != IMX477_ID) {
 		dev_err(imx477->dev, "chip id mismatch: %x!=%x\n",
 			IMX477_ID, val);
+		dev_dbg(imx477->dev, "imx477_detect: EXIT ret=-ENXIO\n");
 		return -ENXIO;
 	}
 
-	dev_info(imx477->dev, "IMX477: Sensor detected successfully\n");
+	dev_dbg(imx477->dev, "imx477_detect: EXIT ret=0\n");
 	return 0;
 }
 
@@ -1073,8 +1154,12 @@ static int imx477_parse_hw_config(struct imx477 *imx477)
 	unsigned int i;
 	int ret;
 
-	if (!fwnode)
+	dev_dbg(imx477->dev, "imx477_parse_hw_config: ENTER\n");
+
+	if (!fwnode) {
+		dev_dbg(imx477->dev, "imx477_parse_hw_config: EXIT ret=-ENXIO (no fwnode)\n");
 		return -ENXIO;
+	}
 
 	/* Request optional enable pin (active-high: 1=enabled, 0=disabled) */
 	imx477->reset_gpio = devm_gpiod_get_optional(imx477->dev, "enable",
@@ -1082,6 +1167,8 @@ static int imx477_parse_hw_config(struct imx477 *imx477)
 	if (IS_ERR(imx477->reset_gpio)) {
 		dev_err(imx477->dev, "failed to get enable gpio %ld\n",
 			PTR_ERR(imx477->reset_gpio));
+		dev_dbg(imx477->dev, "imx477_parse_hw_config: EXIT ret=%ld\n",
+			 PTR_ERR(imx477->reset_gpio));
 		return PTR_ERR(imx477->reset_gpio);
 	}
 
@@ -1089,12 +1176,15 @@ static int imx477_parse_hw_config(struct imx477 *imx477)
 	imx477->inclk = devm_clk_get(imx477->dev, NULL);
 	if (IS_ERR(imx477->inclk)) {
 		dev_err(imx477->dev, "could not get inclk\n");
+		dev_dbg(imx477->dev, "imx477_parse_hw_config: EXIT ret=%ld\n",
+			 PTR_ERR(imx477->inclk));
 		return PTR_ERR(imx477->inclk);
 	}
 
 	rate = clk_get_rate(imx477->inclk);
 	if (rate != IMX477_INCLK_RATE) {
 		dev_err(imx477->dev, "inclk frequency mismatch\n");
+		dev_dbg(imx477->dev, "imx477_parse_hw_config: EXIT ret=-EINVAL (inclk)\n");
 		return -EINVAL;
 	}
 
@@ -1105,17 +1195,23 @@ static int imx477_parse_hw_config(struct imx477 *imx477)
 	ret = devm_regulator_bulk_get(imx477->dev,
 				      ARRAY_SIZE(imx477_supply_names),
 				      imx477->supplies);
-	if (ret)
+	if (ret) {
+		dev_dbg(imx477->dev, "imx477_parse_hw_config: EXIT ret=%d (regulators)\n", ret);
 		return ret;
+	}
 
 	ep = fwnode_graph_get_next_endpoint(fwnode, NULL);
-	if (!ep)
+	if (!ep) {
+		dev_dbg(imx477->dev, "imx477_parse_hw_config: EXIT ret=-ENXIO (no endpoint)\n");
 		return -ENXIO;
+	}
 
 	ret = v4l2_fwnode_endpoint_alloc_parse(ep, &bus_cfg);
 	fwnode_handle_put(ep);
-	if (ret)
+	if (ret) {
+		dev_dbg(imx477->dev, "imx477_parse_hw_config: EXIT ret=%d (endpoint parse)\n", ret);
 		return ret;
+	}
 
 	if (bus_cfg.bus.mipi_csi2.num_data_lanes != IMX477_NUM_DATA_LANES) {
 		dev_err(imx477->dev,
@@ -1141,6 +1237,7 @@ static int imx477_parse_hw_config(struct imx477 *imx477)
 done_endpoint_free:
 	v4l2_fwnode_endpoint_free(&bus_cfg);
 
+	dev_dbg(imx477->dev, "imx477_parse_hw_config: EXIT ret=%d\n", ret);
 	return ret;
 }
 
@@ -1178,30 +1275,33 @@ static int imx477_power_on(struct device *dev)
 	struct imx477 *imx477 = to_imx477(sd);
 	int ret;
 
-	dev_info(dev, "IMX477: Power ON begin\n");
+	dev_dbg(dev, "imx477_power_on: ENTER\n");
 
 	ret = regulator_bulk_enable(ARRAY_SIZE(imx477_supply_names),
 				    imx477->supplies);
 	if (ret < 0) {
 		dev_err(dev, "failed to enable regulators\n");
+		dev_dbg(dev, "imx477_power_on: EXIT ret=%d\n", ret);
 		return ret;
 	}
-	dev_info(dev, "IMX477: Regulators enabled\n");
+	dev_dbg(dev, "IMX477: Regulators enabled\n");
 
 	/* Enable sensor (1 = enabled, 0 = disabled) */
 	gpiod_set_value_cansleep(imx477->reset_gpio, 1);
-	dev_info(dev, "IMX477: Enable GPIO set HIGH (sensor enabled)\n");
+	dev_dbg(dev, "IMX477: Enable GPIO set HIGH (sensor enabled)\n");
 
 	ret = clk_prepare_enable(imx477->inclk);
 	if (ret) {
 		dev_err(imx477->dev, "fail to enable inclk\n");
 		goto error_reset;
 	}
-	dev_info(dev, "IMX477: Clock enabled (24 MHz)\n");
+	dev_dbg(dev, "IMX477: Clock enabled (24 MHz)\n");
 
-	usleep_range(1000, 1200);
+	/* Sensor needs time to stabilize after power-on before I2C is ready */
+	dev_dbg(dev, "IMX477: Waiting 50ms for sensor stabilization...\n");
+	msleep(50);
 
-	dev_info(dev, "IMX477: Power ON complete\n");
+	dev_dbg(dev, "imx477_power_on: EXIT ret=0\n");
 	return 0;
 
 error_reset:
@@ -1210,6 +1310,7 @@ error_reset:
 	regulator_bulk_disable(ARRAY_SIZE(imx477_supply_names),
 			       imx477->supplies);
 
+	dev_dbg(dev, "imx477_power_on: EXIT ret=%d\n", ret);
 	return ret;
 }
 
@@ -1224,18 +1325,18 @@ static int imx477_power_off(struct device *dev)
 	struct v4l2_subdev *sd = dev_get_drvdata(dev);
 	struct imx477 *imx477 = to_imx477(sd);
 
-	dev_info(dev, "IMX477: Power OFF begin\n");
+	dev_dbg(dev, "imx477_power_off: ENTER\n");
 
 	clk_disable_unprepare(imx477->inclk);
 
 	/* Disable sensor (0 = disabled, 1 = enabled) */
 	gpiod_set_value_cansleep(imx477->reset_gpio, 0);
-	dev_info(dev, "IMX477: Enable GPIO set LOW (sensor disabled)\n");
+	dev_dbg(dev, "IMX477: Enable GPIO set LOW (sensor disabled)\n");
 
 	regulator_bulk_disable(ARRAY_SIZE(imx477_supply_names),
 			       imx477->supplies);
 
-	dev_info(dev, "IMX477: Power OFF complete\n");
+	dev_dbg(dev, "imx477_power_off: EXIT ret=0\n");
 	return 0;
 }
 
@@ -1269,6 +1370,17 @@ static int imx477_debugfs_regs_show(struct seq_file *s, void *data)
 		{0x0113, "CSI DT FMT L"},
 		{0x0114, "CSI Lane Mode"},
 		/* Clock */
+		{0x0163, "PLL Status"},
+		{0x0164, "IVT PLL Status"},
+		{0x0165, "IOP PLL Status"},
+		{0x3c0a, "DPHY Timing 0a"},
+		{0x3c0b, "DPHY Timing 0b"},
+		{0x3c0c, "DPHY Timing 0c"},
+		{0x3c0d, "DPHY Timing 0d"},
+		{0x3c0e, "DPHY Timing 0e"},
+		{0x3c0f, "DPHY Timing 0f"},
+		{0x0111, "CSI Sig Mode"},
+		{0x0902, "Binning Weight"},
 		{0x0136, "EXCK Freq H"},
 		{0x0137, "EXCK Freq L"},
 		/* Exposure/Gain */
@@ -1335,6 +1447,8 @@ static int imx477_debugfs_regs_show(struct seq_file *s, void *data)
 	};
 	unsigned int i;
 
+	dev_dbg(imx477->dev, "imx477_debugfs_regs_show: ENTER\n");
+
 	pm_runtime_get_sync(imx477->dev);
 
 	seq_puts(s, "IMX477 Register Dump\n");
@@ -1353,10 +1467,184 @@ static int imx477_debugfs_regs_show(struct seq_file *s, void *data)
 
 	pm_runtime_put(imx477->dev);
 
+	dev_dbg(imx477->dev, "imx477_debugfs_regs_show: EXIT ret=0\n");
 	return 0;
 }
 
 DEFINE_SHOW_ATTRIBUTE(imx477_debugfs_regs);
+
+/*
+ * debugfs: reg_addr - read/write the target register address (hex)
+ * Usage:
+ *   echo 0x0100 > /sys/kernel/debug/2-001a/reg_addr
+ *   cat /sys/kernel/debug/2-001a/reg_addr
+ */
+static int imx477_debugfs_reg_addr_get(void *data, u64 *val)
+{
+	struct imx477 *imx477 = data;
+	*val = imx477->debugfs_reg_addr;
+	return 0;
+}
+
+static int imx477_debugfs_reg_addr_set(void *data, u64 val)
+{
+	struct imx477 *imx477 = data;
+	if (val > 0xFFFF)
+		return -EINVAL;
+	imx477->debugfs_reg_addr = (u16)val;
+	return 0;
+}
+DEFINE_DEBUGFS_ATTRIBUTE(imx477_debugfs_reg_addr_fops,
+			 imx477_debugfs_reg_addr_get,
+			 imx477_debugfs_reg_addr_set,
+			 "0x%04llx\n");
+
+/*
+ * debugfs: reg_val - read/write a single byte at the address set in reg_addr
+ * Usage:
+ *   echo 0x0114 > /sys/kernel/debug/2-001a/reg_addr
+ *   cat /sys/kernel/debug/2-001a/reg_val          # reads register 0x0114
+ *   echo 0x03 > /sys/kernel/debug/2-001a/reg_val  # writes 0x03 to 0x0114
+ */
+static int imx477_debugfs_reg_val_get(void *data, u64 *val)
+{
+	struct imx477 *imx477 = data;
+	u32 regval;
+	int ret;
+
+	pm_runtime_get_sync(imx477->dev);
+	ret = imx477_read_reg(imx477, imx477->debugfs_reg_addr, 1, &regval);
+	pm_runtime_put(imx477->dev);
+
+	if (ret)
+		return ret;
+
+	*val = regval;
+	dev_info(imx477->dev, "REG READ: 0x%04X = 0x%02X\n",
+		 imx477->debugfs_reg_addr, regval);
+	return 0;
+}
+
+static int imx477_debugfs_reg_val_set(void *data, u64 val)
+{
+	struct imx477 *imx477 = data;
+	int ret;
+
+	if (val > 0xFF)
+		return -EINVAL;
+
+	pm_runtime_get_sync(imx477->dev);
+	ret = imx477_write_reg(imx477, imx477->debugfs_reg_addr, 1, (u32)val);
+	pm_runtime_put(imx477->dev);
+
+	if (ret)
+		return ret;
+
+	dev_info(imx477->dev, "REG WRITE: 0x%04X = 0x%02X\n",
+		 imx477->debugfs_reg_addr, (u32)val);
+	return 0;
+}
+DEFINE_DEBUGFS_ATTRIBUTE(imx477_debugfs_reg_val_fops,
+			 imx477_debugfs_reg_val_get,
+			 imx477_debugfs_reg_val_set,
+			 "0x%02llx\n");
+
+/*
+ * debugfs: reg_rw - one-shot read/write via "addr [val]" format
+ * Usage:
+ *   echo 0x0114 > reg_rw        # reads register 0x0114 (result in dmesg)
+ *   echo 0x0114 0x03 > reg_rw   # writes 0x03 to register 0x0114
+ *   cat reg_rw                   # reads the last-accessed register
+ */
+static ssize_t imx477_debugfs_reg_rw_write(struct file *file,
+					   const char __user *ubuf,
+					   size_t count, loff_t *ppos)
+{
+	struct imx477 *imx477 = file->private_data;
+	char buf[64];
+	unsigned int addr, val;
+	u32 regval;
+	int ret, n;
+
+	if (count >= sizeof(buf))
+		return -EINVAL;
+
+	if (copy_from_user(buf, ubuf, count))
+		return -EFAULT;
+	buf[count] = '\0';
+
+	n = sscanf(buf, "0x%x 0x%x", &addr, &val);
+	if (n == 0)
+		n = sscanf(buf, "%x %x", &addr, &val);
+
+	if (n < 1 || addr > 0xFFFF)
+		return -EINVAL;
+
+	imx477->debugfs_reg_addr = (u16)addr;
+
+	pm_runtime_get_sync(imx477->dev);
+
+	if (n == 2) {
+		/* Write */
+		if (val > 0xFF) {
+			pm_runtime_put(imx477->dev);
+			return -EINVAL;
+		}
+		ret = imx477_write_reg(imx477, (u16)addr, 1, val);
+		if (ret) {
+			pm_runtime_put(imx477->dev);
+			return ret;
+		}
+		/* Readback */
+		imx477_read_reg(imx477, (u16)addr, 1, &regval);
+		dev_dbg(imx477->dev, "REG WRITE: 0x%04X = 0x%02X (readback: 0x%02X)\n",
+			 addr, val, regval);
+	} else {
+		/* Read */
+		ret = imx477_read_reg(imx477, (u16)addr, 1, &regval);
+		if (ret) {
+			pm_runtime_put(imx477->dev);
+			return ret;
+		}
+		dev_dbg(imx477->dev, "REG READ: 0x%04X = 0x%02X\n",
+			 addr, regval);
+	}
+
+	pm_runtime_put(imx477->dev);
+	return count;
+}
+
+static int imx477_debugfs_reg_rw_show(struct seq_file *s, void *data)
+{
+	struct imx477 *imx477 = s->private;
+	u32 val;
+	int ret;
+
+	pm_runtime_get_sync(imx477->dev);
+	ret = imx477_read_reg(imx477, imx477->debugfs_reg_addr, 1, &val);
+	pm_runtime_put(imx477->dev);
+
+	if (ret)
+		seq_printf(s, "0x%04X: ERROR (%d)\n", imx477->debugfs_reg_addr, ret);
+	else
+		seq_printf(s, "0x%04X = 0x%02X\n", imx477->debugfs_reg_addr, val);
+
+	return 0;
+}
+
+static int imx477_debugfs_reg_rw_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, imx477_debugfs_reg_rw_show, inode->i_private);
+}
+
+static const struct file_operations imx477_debugfs_reg_rw_fops = {
+	.owner		= THIS_MODULE,
+	.open		= imx477_debugfs_reg_rw_open,
+	.read		= seq_read,
+	.write		= imx477_debugfs_reg_rw_write,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
 
 /**
  * imx477_init_controls() - Initialize sensor subdevice controls
@@ -1371,9 +1659,13 @@ static int imx477_init_controls(struct imx477 *imx477)
 	u32 lpfr;
 	int ret;
 
+	dev_dbg(imx477->dev, "imx477_init_controls: ENTER\n");
+
 	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 6);
-	if (ret)
+	if (ret) {
+		dev_dbg(imx477->dev, "imx477_init_controls: EXIT ret=%d\n", ret);
 		return ret;
+	}
 
 	/* Serialize controls with sensor device */
 	ctrl_hdlr->lock = &imx477->mutex;
@@ -1432,14 +1724,16 @@ static int imx477_init_controls(struct imx477 *imx477)
 		imx477->hblank_ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
 	if (ctrl_hdlr->error) {
-		dev_err(imx477->dev, "control init failed: %d\n",
-			ctrl_hdlr->error);
+		ret = ctrl_hdlr->error;
+		dev_err(imx477->dev, "control init failed: %d\n", ret);
 		v4l2_ctrl_handler_free(ctrl_hdlr);
-		return ctrl_hdlr->error;
+		dev_dbg(imx477->dev, "imx477_init_controls: EXIT ret=%d\n", ret);
+		return ret;
 	}
 
 	imx477->sd.ctrl_handler = ctrl_hdlr;
 
+	dev_dbg(imx477->dev, "imx477_init_controls: EXIT ret=0\n");
 	return 0;
 }
 
@@ -1455,14 +1749,20 @@ static int imx477_probe(struct i2c_client *client)
 	const char *name;
 	int ret;
 
+	dev_dbg(&client->dev, "imx477_probe: ENTER\n");
+
 	imx477 = devm_kzalloc(&client->dev, sizeof(*imx477), GFP_KERNEL);
-	if (!imx477)
+	if (!imx477) {
+		dev_dbg(&client->dev, "imx477_probe: EXIT ret=-ENOMEM\n");
 		return -ENOMEM;
+	}
 
 	imx477->dev = &client->dev;
 	name = device_get_match_data(&client->dev);
-	if (!name)
+	if (!name) {
+		dev_dbg(&client->dev, "imx477_probe: EXIT ret=-ENODEV\n");
 		return -ENODEV;
+	}
 
 	/* Initialize subdev */
 	v4l2_i2c_subdev_init(&imx477->sd, client, &imx477_subdev_ops);
@@ -1471,6 +1771,7 @@ static int imx477_probe(struct i2c_client *client)
 	ret = imx477_parse_hw_config(imx477);
 	if (ret) {
 		dev_err(imx477->dev, "HW configuration is not supported\n");
+		dev_dbg(imx477->dev, "imx477_probe: EXIT ret=%d\n", ret);
 		return ret;
 	}
 
@@ -1525,16 +1826,22 @@ static int imx477_probe(struct i2c_client *client)
 	if (!IS_ERR(imx477->debugfs_dir)) {
 		debugfs_create_file("registers", 0444, imx477->debugfs_dir,
 				    imx477, &imx477_debugfs_regs_fops);
+		debugfs_create_file_unsafe("reg_addr", 0666, imx477->debugfs_dir,
+					   imx477, &imx477_debugfs_reg_addr_fops);
+		debugfs_create_file_unsafe("reg_val", 0666, imx477->debugfs_dir,
+					   imx477, &imx477_debugfs_reg_val_fops);
+		debugfs_create_file("reg_rw", 0666, imx477->debugfs_dir,
+				    imx477, &imx477_debugfs_reg_rw_fops);
 	}
 
 	pm_runtime_set_active(imx477->dev);
 	pm_runtime_enable(imx477->dev);
 	pm_runtime_idle(imx477->dev);
 
-	dev_info(imx477->dev, "IMX477: Probe completed successfully!\n");
 	dev_info(imx477->dev, "IMX477: Mode: %ux%u RAW10, link_freq=%lld Hz\n",
 		 supported_mode.width, supported_mode.height, link_freq[0]);
 
+	dev_dbg(imx477->dev, "imx477_probe: EXIT ret=0\n");
 	return 0;
 
 error_media_entity:
@@ -1546,6 +1853,7 @@ error_power_off:
 error_mutex_destroy:
 	mutex_destroy(&imx477->mutex);
 
+	dev_dbg(imx477->dev, "imx477_probe: EXIT ret=%d\n", ret);
 	return ret;
 }
 
@@ -1560,6 +1868,8 @@ static void imx477_remove(struct i2c_client *client)
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct imx477 *imx477 = to_imx477(sd);
 
+	dev_dbg(&client->dev, "imx477_remove: ENTER\n");
+
 	debugfs_remove_recursive(imx477->debugfs_dir);
 
 	v4l2_async_unregister_subdev(sd);
@@ -1572,6 +1882,8 @@ static void imx477_remove(struct i2c_client *client)
 	pm_runtime_set_suspended(&client->dev);
 
 	mutex_destroy(&imx477->mutex);
+
+	dev_dbg(&client->dev, "imx477_remove: EXIT\n");
 }
 
 static const struct dev_pm_ops imx477_pm_ops = {

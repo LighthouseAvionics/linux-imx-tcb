@@ -57,7 +57,7 @@ static int mxc_isi_async_notifier_bound(struct v4l2_async_notifier *notifier,
 	struct media_pad *pad = &isi->crossbar.pads[masd->port];
 	struct device_link *link;
 
-	dev_dbg(isi->dev, "Bound subdev %s to crossbar input %u\n", sd->name,
+	dev_dbg(isi->dev, "mxc_isi_async_notifier_bound: ENTER subdev=%s port=%u\n", sd->name,
 		masd->port);
 
 	/*
@@ -69,10 +69,15 @@ static int mxc_isi_async_notifier_bound(struct v4l2_async_notifier *notifier,
 	if (!link) {
 		dev_err(isi->dev,
 			"Failed to create device link to source %s\n", sd->name);
+		dev_dbg(isi->dev, "mxc_isi_async_notifier_bound: EXIT ret=-EINVAL\n");
 		return -EINVAL;
 	}
 
-	return v4l2_create_fwnode_links_to_pad(sd, pad, link_flags);
+	{
+		int ret = v4l2_create_fwnode_links_to_pad(sd, pad, link_flags);
+		dev_dbg(isi->dev, "mxc_isi_async_notifier_bound: EXIT ret=%d\n", ret);
+		return ret;
+	}
 }
 
 static int mxc_isi_async_notifier_complete(struct v4l2_async_notifier *notifier)
@@ -80,16 +85,19 @@ static int mxc_isi_async_notifier_complete(struct v4l2_async_notifier *notifier)
 	struct mxc_isi_dev *isi = notifier_to_mxc_isi_dev(notifier);
 	int ret;
 
-	dev_dbg(isi->dev, "All subdevs bound\n");
+	dev_dbg(isi->dev, "mxc_isi_async_notifier_complete: ENTER (All subdevs bound)\n");
 
 	ret = v4l2_device_register_subdev_nodes(&isi->v4l2_dev);
 	if (ret < 0) {
 		dev_err(isi->dev,
 			"Failed to register subdev nodes: %d\n", ret);
+		dev_dbg(isi->dev, "mxc_isi_async_notifier_complete: EXIT ret=%d\n", ret);
 		return ret;
 	}
 
-	return media_device_register(&isi->media_dev);
+	ret = media_device_register(&isi->media_dev);
+	dev_dbg(isi->dev, "mxc_isi_async_notifier_complete: EXIT ret=%d\n", ret);
+	return ret;
 }
 
 static const struct v4l2_async_notifier_operations mxc_isi_async_notifier_ops = {
@@ -101,16 +109,24 @@ static int mxc_isi_pipe_register(struct mxc_isi_pipe *pipe)
 {
 	int ret;
 
-	ret = v4l2_device_register_subdev(&pipe->isi->v4l2_dev, &pipe->sd);
-	if (ret < 0)
-		return ret;
+	dev_dbg(pipe->isi->dev, "mxc_isi_pipe_register: ENTER pipe=%u\n", pipe->id);
 
-	return mxc_isi_video_register(pipe, &pipe->isi->v4l2_dev);
+	ret = v4l2_device_register_subdev(&pipe->isi->v4l2_dev, &pipe->sd);
+	if (ret < 0) {
+		dev_dbg(pipe->isi->dev, "mxc_isi_pipe_register: EXIT ret=%d (register_subdev failed)\n", ret);
+		return ret;
+	}
+
+	ret = mxc_isi_video_register(pipe, &pipe->isi->v4l2_dev);
+	dev_dbg(pipe->isi->dev, "mxc_isi_pipe_register: EXIT ret=%d\n", ret);
+	return ret;
 }
 
 static void mxc_isi_pipe_unregister(struct mxc_isi_pipe *pipe)
 {
+	dev_dbg(pipe->isi->dev, "mxc_isi_pipe_unregister: ENTER pipe=%u\n", pipe->id);
 	mxc_isi_video_unregister(pipe);
+	dev_dbg(pipe->isi->dev, "mxc_isi_pipe_unregister: EXIT\n");
 }
 
 static int mxc_isi_v4l2_init(struct mxc_isi_dev *isi)
@@ -120,6 +136,8 @@ static int mxc_isi_v4l2_init(struct mxc_isi_dev *isi)
 	struct v4l2_device *v4l2_dev = &isi->v4l2_dev;
 	unsigned int i;
 	int ret;
+
+	dev_dbg(isi->dev, "mxc_isi_v4l2_init: ENTER\n");
 
 	/* Initialize the media device. */
 	strscpy(media_dev->model, "FSL Capture Media Device",
@@ -207,6 +225,7 @@ static int mxc_isi_v4l2_init(struct mxc_isi_dev *isi)
 		goto err_m2m;
 	}
 
+	dev_dbg(isi->dev, "mxc_isi_v4l2_init: EXIT ret=0\n");
 	return 0;
 
 err_m2m:
@@ -216,12 +235,15 @@ err_v4l2:
 	v4l2_device_unregister(v4l2_dev);
 err_media:
 	media_device_cleanup(media_dev);
+	dev_dbg(isi->dev, "mxc_isi_v4l2_init: EXIT ret=%d\n", ret);
 	return ret;
 }
 
 static void mxc_isi_v4l2_cleanup(struct mxc_isi_dev *isi)
 {
 	unsigned int i;
+
+	dev_dbg(isi->dev, "mxc_isi_v4l2_cleanup: ENTER\n");
 
 	v4l2_async_nf_unregister(&isi->notifier);
 	v4l2_async_nf_cleanup(&isi->notifier);
@@ -237,6 +259,8 @@ static void mxc_isi_v4l2_cleanup(struct mxc_isi_dev *isi)
 	mxc_isi_crossbar_unregister(&isi->crossbar);
 
 	media_device_cleanup(&isi->media_dev);
+
+	dev_dbg(isi->dev, "mxc_isi_v4l2_cleanup: EXIT\n");
 }
 
 /* -----------------------------------------------------------------------------
@@ -430,6 +454,8 @@ static int mxc_isi_pm_suspend(struct device *dev)
 	struct mxc_isi_dev *isi = dev_get_drvdata(dev);
 	unsigned int i;
 
+	dev_dbg(dev, "mxc_isi_pm_suspend: ENTER\n");
+
 	for (i = 0; i < isi->pdata->num_channels; ++i) {
 		struct mxc_isi_pipe *pipe = &isi->pipes[i];
 
@@ -437,7 +463,11 @@ static int mxc_isi_pm_suspend(struct device *dev)
 		mxc_isi_m2m_suspend(pipe);
 	}
 
-	return pm_runtime_force_suspend(dev);
+	{
+		int ret = pm_runtime_force_suspend(dev);
+		dev_dbg(dev, "mxc_isi_pm_suspend: EXIT ret=%d\n", ret);
+		return ret;
+	}
 }
 
 static int mxc_isi_pm_resume(struct device *dev)
@@ -447,9 +477,13 @@ static int mxc_isi_pm_resume(struct device *dev)
 	int err = 0;
 	int ret;
 
+	dev_dbg(dev, "mxc_isi_pm_resume: ENTER\n");
+
 	ret = pm_runtime_force_resume(dev);
-	if (ret < 0)
+	if (ret < 0) {
+		dev_dbg(dev, "mxc_isi_pm_resume: EXIT ret=%d\n", ret);
 		return ret;
+	}
 
 	for (i = 0; i < isi->pdata->num_channels; ++i) {
 		struct mxc_isi_pipe *pipe = &isi->pipes[i];
@@ -473,6 +507,7 @@ static int mxc_isi_pm_resume(struct device *dev)
 		}
 	}
 
+	dev_dbg(dev, "mxc_isi_pm_resume: EXIT ret=%d\n", err);
 	return err;
 }
 
@@ -480,8 +515,11 @@ static int mxc_isi_runtime_suspend(struct device *dev)
 {
 	struct mxc_isi_dev *isi = dev_get_drvdata(dev);
 
+	dev_dbg(dev, "mxc_isi_runtime_suspend: ENTER\n");
+
 	clk_bulk_disable_unprepare(isi->pdata->num_clks, isi->clks);
 
+	dev_dbg(dev, "mxc_isi_runtime_suspend: EXIT ret=0\n");
 	return 0;
 }
 
@@ -490,12 +528,16 @@ static int mxc_isi_runtime_resume(struct device *dev)
 	struct mxc_isi_dev *isi = dev_get_drvdata(dev);
 	int ret;
 
+	dev_dbg(dev, "mxc_isi_runtime_resume: ENTER\n");
+
 	ret = clk_bulk_prepare_enable(isi->pdata->num_clks, isi->clks);
 	if (ret) {
 		dev_err(dev, "Failed to enable clocks (%d)\n", ret);
+		dev_dbg(dev, "mxc_isi_runtime_resume: EXIT ret=%d\n", ret);
 		return ret;
 	}
 
+	dev_dbg(dev, "mxc_isi_runtime_resume: EXIT ret=0\n");
 	return 0;
 }
 
@@ -514,18 +556,24 @@ static int mxc_isi_clk_get(struct mxc_isi_dev *isi)
 			  * sizeof(*isi->clks);
 	int ret;
 
+	dev_dbg(isi->dev, "mxc_isi_clk_get: ENTER\n");
+
 	isi->clks = devm_kmemdup(isi->dev, isi->pdata->clks, size, GFP_KERNEL);
-	if (!isi->clks)
+	if (!isi->clks) {
+		dev_dbg(isi->dev, "mxc_isi_clk_get: EXIT ret=-ENOMEM\n");
 		return -ENOMEM;
+	}
 
 	ret = devm_clk_bulk_get(isi->dev, isi->pdata->num_clks,
 				isi->clks);
 	if (ret < 0) {
 		dev_err(isi->dev, "Failed to acquire clocks: %d\n",
 			ret);
+		dev_dbg(isi->dev, "mxc_isi_clk_get: EXIT ret=%d\n", ret);
 		return ret;
 	}
 
+	dev_dbg(isi->dev, "mxc_isi_clk_get: EXIT ret=0\n");
 	return 0;
 }
 
@@ -537,9 +585,13 @@ static int mxc_isi_probe(struct platform_device *pdev)
 	unsigned int i;
 	int ret = 0;
 
+	dev_dbg(dev, "mxc_isi_probe: ENTER\n");
+
 	isi = devm_kzalloc(dev, sizeof(*isi), GFP_KERNEL);
-	if (!isi)
+	if (!isi) {
+		dev_dbg(dev, "mxc_isi_probe: EXIT ret=-ENOMEM\n");
 		return -ENOMEM;
+	}
 
 	isi->dev = dev;
 	platform_set_drvdata(pdev, isi);
@@ -548,18 +600,22 @@ static int mxc_isi_probe(struct platform_device *pdev)
 
 	isi->pipes = kcalloc(isi->pdata->num_channels, sizeof(isi->pipes[0]),
 			     GFP_KERNEL);
-	if (!isi->pipes)
+	if (!isi->pipes) {
+		dev_dbg(dev, "mxc_isi_probe: EXIT ret=-ENOMEM (pipes)\n");
 		return -ENOMEM;
+	}
 
 	ret = mxc_isi_clk_get(isi);
 	if (ret < 0) {
 		dev_err(dev, "Failed to get clocks\n");
+		dev_dbg(dev, "mxc_isi_probe: EXIT ret=%d\n", ret);
 		return ret;
 	}
 
 	isi->regs = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(isi->regs)) {
 		dev_err(dev, "Failed to get ISI register map\n");
+		dev_dbg(dev, "mxc_isi_probe: EXIT ret=%ld\n", PTR_ERR(isi->regs));
 		return PTR_ERR(isi->regs);
 	}
 
@@ -569,6 +625,7 @@ static int mxc_isi_probe(struct platform_device *pdev)
 		if (IS_ERR(isi->gasket)) {
 			ret = PTR_ERR(isi->gasket);
 			dev_err(dev, "failed to get gasket: %d\n", ret);
+			dev_dbg(dev, "mxc_isi_probe: EXIT ret=%d\n", ret);
 			return ret;
 		}
 	}
@@ -577,6 +634,7 @@ static int mxc_isi_probe(struct platform_device *pdev)
 	ret = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(dma_size));
 	if (ret) {
 		dev_err(dev, "failed to set DMA mask\n");
+		dev_dbg(dev, "mxc_isi_probe: EXIT ret=%d\n", ret);
 		return ret;
 	}
 
@@ -586,6 +644,7 @@ static int mxc_isi_probe(struct platform_device *pdev)
 	if (ret) {
 		dev_err_probe(dev, ret, "Failed to enable ISI\n");
 		pm_runtime_disable(dev);
+		dev_dbg(dev, "mxc_isi_probe: EXIT ret=%d\n", ret);
 		return ret;
 	}
 
@@ -613,6 +672,7 @@ static int mxc_isi_probe(struct platform_device *pdev)
 	mxc_isi_debug_init(isi);
 
 	pm_runtime_put(dev);
+	dev_dbg(dev, "mxc_isi_probe: EXIT ret=0\n");
 	return 0;
 
 err_xbar:
@@ -620,13 +680,17 @@ err_xbar:
 err_pm:
 	pm_runtime_put(dev);
 	pm_runtime_disable(isi->dev);
+	dev_dbg(dev, "mxc_isi_probe: EXIT ret=%d\n", ret);
 	return ret;
 }
 
 static void mxc_isi_remove(struct platform_device *pdev)
 {
 	struct mxc_isi_dev *isi = platform_get_drvdata(pdev);
+	struct device *dev = &pdev->dev;
 	unsigned int i;
+
+	dev_dbg(dev, "mxc_isi_remove: ENTER\n");
 
 	mxc_isi_debug_cleanup(isi);
 
@@ -640,6 +704,8 @@ static void mxc_isi_remove(struct platform_device *pdev)
 	mxc_isi_v4l2_cleanup(isi);
 
 	pm_runtime_disable(isi->dev);
+
+	dev_dbg(dev, "mxc_isi_remove: EXIT\n");
 }
 
 static const struct of_device_id mxc_isi_of_match[] = {

@@ -128,10 +128,9 @@
 };
 
 &combo_rx {
-	status = "okay";
+	status = "disabled";
 };
 
-/* CSI0 disabled - WM8904 audio codec conflicts with IMX477 at 0x1a on lpi2c8
 &csi_pixel_formatter_0 {
 	status = "okay";
 
@@ -156,31 +155,30 @@
 		};
 	};
 };
-*/
 
 &csi_pixel_formatter_1 {
-	status = "okay";
+	status = "disabled";
 
-	ports {
-		#address-cells = <1>;
-		#size-cells = <0>;
+	// ports {
+	// 	#address-cells = <1>;
+	// 	#size-cells = <0>;
 
-		port@0 {
-			reg = <0>;
+	// 	port@0 {
+	// 		reg = <0>;
 
-			formatter_1_in: endpoint {
-				remote-endpoint = <&mipi_csi1_out>;
-			};
-		};
+	// 		formatter_1_in: endpoint {
+	// 			remote-endpoint = <&mipi_csi1_out>;
+	// 		};
+	// 	};
 
-		port@1 {
-			reg = <1>;
+	// 	port@1 {
+	// 		reg = <1>;
 
-			formatter_1_out: endpoint {
-				remote-endpoint = <&isi_in_3>;
-			};
-		};
-	};
+	// 		formatter_1_out: endpoint {
+	// 			remote-endpoint = <&isi_in_3>;
+	// 		};
+	// 	};
+	// };
 };
 
 &displaymix_irqsteer {
@@ -191,11 +189,9 @@
 	status = "disabled";
 };
 
-/*
 &dphy_rx {
 	status = "okay";
 };
-*/
 
 &dpu {
 	status = "disabled";
@@ -238,7 +234,6 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 
-		/*
 		port@2 {
 			reg = <2>;
 
@@ -246,8 +241,8 @@
 				remote-endpoint = <&formatter_0_out>;
 			};
 		};
-		*/
 
+		/*
 		port@3 {
 			reg = <3>;
 
@@ -255,6 +250,7 @@
 				remote-endpoint = <&formatter_1_out>;
 			};
 		};
+		*/
 	};
 };
 
@@ -298,19 +294,20 @@
 	sda-gpios = <&gpio2 29 GPIO_ACTIVE_HIGH>;
 	status = "okay";
 
-	/* IMX477 camera on CSI1 */
-	imx477_1: imx477@1a {
+	/* IMX477 camera on CSI0 */
+	imx477_0: imx477@1a {
 		compatible = "sony,imx477";
 		reg = <0x1a>;
 		clocks = <&clk_imx477_fixed>;
 		clock-names = "xclk";
 		assigned-clock-rates = <24000000>;
-		enable-gpios = <&gpio2 24 GPIO_ACTIVE_HIGH>;
+		enable-gpios = <&gpio5 15 GPIO_ACTIVE_HIGH>;
 		status = "okay";
 
 		port {
-			imx477_1_ep: endpoint {
-				remote-endpoint = <&mipi_csi1_ep>;
+			imx477_0_ep: endpoint {
+				// clock-noncontinuous;
+				remote-endpoint = <&mipi_csi0_ep>;
 				data-lanes = <1 2>;
 				clock-lanes = <0>;
 				link-frequencies = /bits/ 64 <450000000>;
@@ -454,7 +451,7 @@
 		microchip,rx-int-gpios = <&gpio2 22 GPIO_ACTIVE_LOW>;
 		clocks = <&can0_osc>;
 		spi-max-frequency = <12000000>;
-		status = "okay";
+		status = "disable";
 	};
 
 	spidev0: spi@2 {
@@ -478,7 +475,6 @@
 	status = "okay";
 };
 
-/*
 &mipi_csi0 {
 	status = "okay";
 
@@ -489,7 +485,7 @@
 		port@0 {
 			reg = <0>;
 			mipi_csi0_ep: endpoint {
-				remote-endpoint = <&imx477_ep>;
+				remote-endpoint = <&imx477_0_ep>;
 				data-lanes = <1 2>;
 				clock-lanes = <0>;
 			};
@@ -503,30 +499,29 @@
 		};
 	};
 };
-*/
 
 &mipi_csi1 {
-	status = "okay";
+	status = "disabled";
 
 	ports {
 		#address-cells = <1>;
 		#size-cells = <0>;
 
-		port@0 {
-			reg = <0>;
-			mipi_csi1_ep: endpoint {
-				remote-endpoint = <&imx477_1_ep>;
-				data-lanes = <1 2>;
-				clock-lanes = <0>;
-			};
-		};
+		// port@0 {
+		// 	reg = <0>;
+		// 	mipi_csi1_ep: endpoint {
+		// 		remote-endpoint = <&imx477_1_ep>;
+		// 		data-lanes = <1 2>;
+		// 		clock-lanes = <0>;
+		// 	};
+		// };
 
-		port@1 {
-			reg = <1>;
-			mipi_csi1_out: endpoint {
-				remote-endpoint = <&formatter_1_in>;
-			};
-		};
+		// port@1 {
+		// 	reg = <1>;
+		// 	mipi_csi1_out: endpoint {
+		// 		remote-endpoint = <&formatter_1_in>;
+		// 	};
+		// };
 	};
 };
 
