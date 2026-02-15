@@ -341,7 +341,7 @@ static const struct imx477_reg mode_2028x1520_regs[] = {
 	{0x030e, 0x00},  /* IOP PLL multiplier high: 75 for 450 MHz */
 	{0x030f, 0x4b},  /* IOP PLL multiplier low: 75 (24/2*75=900MHz) */
 	{0x0310, 0x00},
-	{0x0820, 0x07},  /* Link bit rate: 1800 Mbps total (900 Mbps/lane) */
+	{0x0820, 0x07},  /* Link bit rate: 1800 Mbps total (900 Mbps/lane DDR) */
 	{0x0821, 0x08},
 	{0x0822, 0x00},
 	{0x0823, 0x00},
@@ -1560,7 +1560,8 @@ static ssize_t imx477_debugfs_reg_rw_write(struct file *file,
 					   const char __user *ubuf,
 					   size_t count, loff_t *ppos)
 {
-	struct imx477 *imx477 = file->private_data;
+	struct seq_file *s = file->private_data;
+	struct imx477 *imx477 = s->private;
 	char buf[64];
 	unsigned int addr, val;
 	u32 regval;

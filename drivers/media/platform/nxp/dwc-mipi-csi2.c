@@ -905,7 +905,7 @@ static void dwc_csi_log_counters(struct dwc_csi_device *csidev)
 
 	for (i = 0; i < DWC_NUM_EVENTS; ++i) {
 		if (csidev->events[i].counter > 0)
-			dev_dbg(csidev->dev, "%s events: %d\n",
+			dev_info(csidev->dev, "%s events: %d\n",
 				 csidev->events[i].name,
 				 csidev->events[i].counter);
 	}
