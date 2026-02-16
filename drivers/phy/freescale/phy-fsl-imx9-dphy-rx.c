@@ -139,7 +139,7 @@ static const struct dphy_mbps_hsfreqrange_map hsfreqrange_table[] = {
 	{ .mbps = 750, .hsfreqrange = 0x39, .ddlfreq = 489 },
 	{ .mbps = 800, .hsfreqrange = 0x09, .ddlfreq = 489 },
 	{ .mbps = 850, .hsfreqrange = 0x19, .ddlfreq = 489 },
-	{ .mbps = 900, .hsfreqrange = 0x0a, .ddlfreq = 489 }, /* was 0x29, try 1000 range for more settling time */
+	{ .mbps = 900, .hsfreqrange = 0x29, .ddlfreq = 489 },
 	{ .mbps = 950, .hsfreqrange = 0x3a, .ddlfreq = 489 },
 	{ .mbps = 1000, .hsfreqrange = 0x0a, .ddlfreq = 489 },
 	{ .mbps = 1050, .hsfreqrange = 0x1a, .ddlfreq = 489 },

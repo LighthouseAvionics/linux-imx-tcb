@@ -310,7 +310,7 @@
 				remote-endpoint = <&mipi_csi0_ep>;
 				data-lanes = <1 2>;
 				clock-lanes = <0>;
-				link-frequencies = /bits/ 64 <450000000>;
+				link-frequencies = /bits/ 64 <600000000>;
 			};
 		};
 	};

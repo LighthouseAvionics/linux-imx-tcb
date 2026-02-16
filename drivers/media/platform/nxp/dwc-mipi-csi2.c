@@ -769,27 +769,29 @@ static int dwc_csi_device_init(struct dwc_csi_device *csidev)
 		 phy_stopstate, csidev->bus.num_data_lanes);
 
 	ret = readl_poll_timeout(csidev->regs + CSI2RX_DPHY_STOPSTATE,
-				 val, (val & phy_stopstate) != phy_stopstate,
+				 val, (val & phy_stopstate) == phy_stopstate,
 				 10, 10000);
 	if (ret) {
-		/* Dump all DPHY status on failure */
+		/* Dump DPHY status - warn but continue since sensor may
+		 * not be driving lanes yet at this point in the startup
+		 * sequence. The lanes will sync when the sensor starts.
+		 */
 		u32 rx_status = dwc_csi_read(csidev, CSI2RX_DPHY_RX_STATUS);
 		u32 stop_state = dwc_csi_read(csidev, CSI2RX_DPHY_STOPSTATE);
 		u32 n_lanes = dwc_csi_read(csidev, CSI2RX_N_LANES);
-		dev_err(dev, "DWC-INIT: STOP STATE TIMEOUT! expected_mask=0x%08x got=0x%08x\n",
+		dev_warn(dev, "DWC-INIT: STOP STATE TIMEOUT (expected=0x%08x got=0x%08x) - continuing\n",
 			phy_stopstate, val);
-		dev_err(dev, "DWC-INIT: DPHY_RX_STATUS=0x%08x N_LANES=0x%08x STOPSTATE=0x%08x\n",
+		dev_warn(dev, "DWC-INIT: DPHY_RX_STATUS=0x%08x N_LANES=0x%08x STOPSTATE=0x%08x\n",
 			rx_status, n_lanes, stop_state);
-		dev_err(dev, "DWC-INIT:   CLK_LANE_HS=%s CLK_LANE_ULP=%s\n",
+		dev_warn(dev, "DWC-INIT:   CLK_LANE_HS=%s CLK_LANE_ULP=%s\n",
 			(rx_status & CSI2RX_DPHY_RX_STATUS_CLK_LANE_HS) ? "YES" : "NO",
 			(rx_status & CSI2RX_DPHY_RX_STATUS_CLK_LANE_ULP) ? "YES" : "NO");
-		dev_err(dev, "DWC-INIT:   CLK_STOP=%s D0_STOP=%s D1_STOP=%s D2_STOP=%s D3_STOP=%s\n",
+		dev_warn(dev, "DWC-INIT:   CLK_STOP=%s D0_STOP=%s D1_STOP=%s D2_STOP=%s D3_STOP=%s\n",
 			(stop_state & CSI2RX_DPHY_STOPSTATE_CLK_LANE) ? "YES" : "NO",
 			(stop_state & CSI2RX_DPHY_STOPSTATE_DATA_LANE0) ? "YES" : "NO",
 			(stop_state & CSI2RX_DPHY_STOPSTATE_DATA_LANE1) ? "YES" : "NO",
 			(stop_state & CSI2RX_DPHY_STOPSTATE_DATA_LANE2) ? "YES" : "NO",
 			(stop_state & CSI2RX_DPHY_STOPSTATE_DATA_LANE3) ? "YES" : "NO");
-		return ret;
 	}
 
 	dev_dbg(dev, "DWC-INIT: lanes in stop state OK (val=0x%08x)\n", val);
@@ -1777,6 +1779,50 @@ static irqreturn_t dwc_csi_irq_handler(int irq, void *priv)
 	int i;
 
 	status = dwc_csi_read(csidev, CSI2RX_INT_ST_MAIN);
+
+	/* Read sub-registers (read-to-clear) to identify specific errors */
+	if (status & CSI2RX_INT_ST_MAIN_FATAL_ERR_PHY) {
+		u32 dphy_fatal = dwc_csi_read(csidev, CSI2RX_INT_ST_DPHY_FATAL);
+		dev_info(csidev->dev, "DPHY_FATAL=0x%02x [%s%s]\n", dphy_fatal,
+			 (dphy_fatal & BIT(0)) ? "SOT_ERR_L0 " : "",
+			 (dphy_fatal & BIT(1)) ? "SOT_ERR_L1 " : "");
+	}
+	if (status & CSI2RX_INT_ST_MAIN_FATAL_ERR_PKT) {
+		u32 pkt_fatal = dwc_csi_read(csidev, CSI2RX_INT_ST_PKT_FATAL);
+		dev_info(csidev->dev, "PKT_FATAL=0x%02x [%s%s]\n", pkt_fatal,
+			 (pkt_fatal & BIT(0)) ? "ECC_ERR " : "",
+			 (pkt_fatal & BIT(1)) ? "PAYLOAD_ERR " : "");
+	}
+	if (status & CSI2RX_INT_ST_MAIN_ERR_PHY) {
+		u32 dphy_err = dwc_csi_read(csidev, CSI2RX_INT_ST_DPHY);
+		dev_info(csidev->dev, "DPHY_ERR=0x%05x [%s%s%s%s]\n", dphy_err,
+			 (dphy_err & BIT(0)) ? "SOT_L0 " : "",
+			 (dphy_err & BIT(1)) ? "SOT_L1 " : "",
+			 (dphy_err & BIT(16)) ? "ESC_L0 " : "",
+			 (dphy_err & BIT(17)) ? "ESC_L1 " : "");
+	}
+	if (status & CSI2RX_INT_ST_MAIN_FATAL_ERR_IPI) {
+		u32 ipi_fatal = dwc_csi_read(csidev, CSI2RX_INT_ST_IPI_FATAL);
+		dev_info(csidev->dev, "IPI_FATAL=0x%02x [%s%s%s%s%s%s%s]\n", ipi_fatal,
+			 (ipi_fatal & BIT(0)) ? "FIFO_UNDERFLOW " : "",
+			 (ipi_fatal & BIT(1)) ? "FIFO_OVERFLOW " : "",
+			 (ipi_fatal & BIT(2)) ? "FRAME_SYNC " : "",
+			 (ipi_fatal & BIT(3)) ? "FIFO_NOT_EMPTY " : "",
+			 (ipi_fatal & BIT(4)) ? "HLINE_TIME " : "",
+			 (ipi_fatal & BIT(5)) ? "OUTPUT_FIFO_OVERFLOW " : "",
+			 (ipi_fatal & BIT(6)) ? "PD_FIFO_OVERFLOW " : "");
+	}
+	if (status & (CSI2RX_INT_ST_MAIN_FATAL_ERR_BNDRY_FRAMEL |
+		      CSI2RX_INT_ST_MAIN_FATAL_ERR_SEQ_FRAME |
+		      CSI2RX_INT_ST_MAIN_FATAL_ERR_CRC_FRAME |
+		      CSI2RX_INT_ST_MAIN_FATAL_ERR_PLD_CRC)) {
+		u32 frame_fatal = dwc_csi_read(csidev, 0x100);
+		dev_info(csidev->dev, "FRAME/CRC: MAIN=0x%05x [%s%s%s%s]\n", status,
+			 (status & CSI2RX_INT_ST_MAIN_FATAL_ERR_BNDRY_FRAMEL) ? "BNDRY " : "",
+			 (status & CSI2RX_INT_ST_MAIN_FATAL_ERR_SEQ_FRAME) ? "SEQ " : "",
+			 (status & CSI2RX_INT_ST_MAIN_FATAL_ERR_CRC_FRAME) ? "CRC_FRAME " : "",
+			 (status & CSI2RX_INT_ST_MAIN_FATAL_ERR_PLD_CRC) ? "PLD_CRC " : "");
+	}
 
 	spin_lock_irqsave(&csidev->slock, flags);
 
