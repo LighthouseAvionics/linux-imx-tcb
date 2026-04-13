@@ -628,4 +628,27 @@ source "drivers/misc/uacce/Kconfig"
 source "drivers/misc/pvpanic/Kconfig"
 source "drivers/misc/mchp_pci1xxxx/Kconfig"
 source "drivers/misc/keba/Kconfig"
+
+config ORIN_CONTROL
+	tristate "Lighthouse Avionics Orin power/recovery control"
+	depends on GPIOLIB && OF
+	help
+	  Driver to control power and recovery for 8 Jetson Orin modules
+	  via PCA9555 GPIO expanders. Provides sysfs attributes for
+	  per-module power on/off and recovery mode assertion.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called orin-control.
+
+config TCB_POWER_MONITOR
+	tristate "Lighthouse Avionics TCB power monitor"
+	depends on IIO && OF && HWMON
+	help
+	  System power monitor for the TCB board. Reads voltage and
+	  current from an ADS1015 ADC via IIO and exposes scaled
+	  readings (Vin, SOM_VBAT, 3.3V, 24V current) through hwmon.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called tcb-power-monitor.
+
 endmenu
