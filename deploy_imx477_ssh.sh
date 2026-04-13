@@ -61,6 +61,9 @@ echo -e "${YELLOW}[3/4] Kernel Modules${NC}"
 echo "  Installing to temp location..."
 rm -rf /tmp/modules_install
 make -C "$KERNEL_SRC" INSTALL_MOD_PATH="/tmp/modules_install" modules_install >/dev/null 2>&1
+# Remove source/build symlinks so scp doesn't copy the entire kernel tree
+rm -f "/tmp/modules_install/lib/modules/$NEW_KERNEL_VER/build"
+rm -f "/tmp/modules_install/lib/modules/$NEW_KERNEL_VER/source"
 echo "  Backing up existing modules..."
 ssh $DEVICE_USER@$DEVICE_IP "[ -d /lib/modules/$NEW_KERNEL_VER ] && cp -a /lib/modules/$NEW_KERNEL_VER $BACKUP_DIR/modules || true"
 echo "  Copying new modules..."
