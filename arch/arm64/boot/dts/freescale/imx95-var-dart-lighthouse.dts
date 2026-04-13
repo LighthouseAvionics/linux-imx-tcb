@@ -550,7 +550,7 @@
 &pcie0 {
 	fsl,refclk-pad-mode = <IMX8_PCIE_REFCLK_PAD_INPUT>;
 	reset-gpio = <&gpio4 15 GPIO_ACTIVE_LOW>;
-	status = "okay";
+	status = "disabled";
 };
 
 &pcie1 {status = "disabled";};
