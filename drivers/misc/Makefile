@@ -74,3 +74,4 @@ obj-$(CONFIG_MARVELL_CN10K_DPI)	+= mrvl_cn10k_dpi.o
 obj-y				+= keba/
 obj-$(CONFIG_ORIN_CONTROL)	+= orin-control.o
 obj-$(CONFIG_TCB_POWER_MONITOR)	+= tcb-power-monitor.o
+obj-$(CONFIG_TCB_RELAYS)	+= tcb-relays.o

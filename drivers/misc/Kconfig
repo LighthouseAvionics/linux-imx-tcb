@@ -651,4 +651,16 @@ config TCB_POWER_MONITOR
 	  To compile this driver as a module, choose M here: the module
 	  will be called tcb-power-monitor.
 
+config TCB_RELAYS
+	tristate "Lighthouse Avionics TCB relay control"
+	depends on GPIOLIB && OF
+	help
+	  Driver to control peripheral power relays on the TCB board
+	  (PTZ camera, heater, 48V rail) via PCA9555 GPIO expanders.
+	  Exposes sysfs attributes for each relay with configurable
+	  default state from the device tree.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called tcb-relays.
+
 endmenu
