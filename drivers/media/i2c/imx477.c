@@ -45,6 +45,13 @@
 #define IMX477_AGAIN_STEP	1
 #define IMX477_AGAIN_DEFAULT	0
 
+/* Digital gain control — applied to all 4 color channels (GR, R, B, GB) */
+#define IMX477_REG_DIGITAL_GAIN	0x020e
+#define IMX477_DGTL_GAIN_MIN	0x0100	/* 1.0x */
+#define IMX477_DGTL_GAIN_MAX	0x0fff	/* 15.99x */
+#define IMX477_DGTL_GAIN_STEP	1
+#define IMX477_DGTL_GAIN_DEFAULT	0x0100	/* 1.0x */
+
 /* Group hold register */
 #define IMX477_REG_HOLD		0x0104
 
@@ -148,6 +155,7 @@ struct imx477 {
 		struct v4l2_ctrl *exp_ctrl;
 		struct v4l2_ctrl *again_ctrl;
 	};
+	struct v4l2_ctrl *dgain_ctrl;
 	u32 vblank;
 	const struct imx477_mode *cur_mode;
 	struct mutex mutex;
@@ -656,8 +664,271 @@ static const struct imx477_reg mode_2028x1520_regs[] = {
 	{0xe000, 0x01},  /* FRAME_BLANKSTOP_CL: keep clock active (LP-11) */
 };
 
+/*
+ * Single-PLL register table for 2028x1520 RAW12 @ 20fps
+ * Same PLL as RAW10: VCO=1200 MHz, VTPXCK=120 MHz, pixel_rate=480 Mpps
+ * RAW12 needs more MIPI bandwidth per pixel, so LLP must increase:
+ *   output_pixel_rate = 1200/12 × 2 = 200 Mpps
+ *   LLP_min = width × 4 × VTPXCK / output_pixel_rate = 2028 × 480/200 = 4867
+ *   LLP = 5000 → H_blank = 5000 × 200/480 - 2028 = 55
+ *   FLL = 480M / (5000 × 20) = 4800 → 20 fps
+ */
+static const struct imx477_reg mode_2028x1520_12bit_regs[] = {
+	/* Sensor init registers (same as 10-bit mode) */
+	{0x0136, 0x18},
+	{0x0137, 0x00},
+	{0x3c7e, 0x08},
+	{0x3c7f, 0x02},
+	{0x38a8, 0x1f},
+	{0x38a9, 0xff},
+	{0x38aa, 0x1f},
+	{0x38ab, 0xff},
+	{0x55d4, 0x00},
+	{0x55d5, 0x00},
+	{0x55d6, 0x07},
+	{0x55d7, 0xff},
+	{0x55e8, 0x07},
+	{0x55e9, 0xff},
+	{0x55ea, 0x00},
+	{0x55eb, 0x00},
+	{0x575c, 0x07},
+	{0x575d, 0xff},
+	{0x575e, 0x00},
+	{0x575f, 0x00},
+	{0x5764, 0x00},
+	{0x5765, 0x00},
+	{0x5766, 0x07},
+	{0x5767, 0xff},
+	{0x5974, 0x04},
+	{0x5975, 0x01},
+	{0x5f10, 0x09},
+	{0x5f11, 0x92},
+	{0x5f12, 0x32},
+	{0x5f13, 0x72},
+	{0x5f14, 0x16},
+	{0x5f15, 0xba},
+	{0x5f17, 0x13},
+	{0x5f18, 0x24},
+	{0x5f19, 0x60},
+	{0x5f1a, 0xe3},
+	{0x5f1b, 0xad},
+	{0x5f1c, 0x74},
+	{0x5f2d, 0x25},
+	{0x5f5c, 0xd0},
+	{0x6a22, 0x00},
+	{0x6a23, 0x1d},
+	{0x7ba8, 0x00},
+	{0x7ba9, 0x00},
+	{0x886b, 0x00},
+	{0x9002, 0x0a},
+	{0x9004, 0x1a},
+	{0x9214, 0x93},
+	{0x9215, 0x69},
+	{0x9216, 0x93},
+	{0x9217, 0x6b},
+	{0x9218, 0x93},
+	{0x9219, 0x6d},
+	{0x921a, 0x57},
+	{0x921b, 0x58},
+	{0x921c, 0x57},
+	{0x921d, 0x59},
+	{0x921e, 0x57},
+	{0x921f, 0x5a},
+	{0x9220, 0x57},
+	{0x9221, 0x5b},
+	{0x9222, 0x93},
+	{0x9223, 0x02},
+	{0x9224, 0x93},
+	{0x9225, 0x03},
+	{0x9226, 0x93},
+	{0x9227, 0x04},
+	{0x9228, 0x93},
+	{0x9229, 0x05},
+	{0x922a, 0x98},
+	{0x922b, 0x21},
+	{0x922c, 0xb2},
+	{0x922d, 0xdb},
+	{0x922e, 0xb2},
+	{0x922f, 0xdc},
+	{0x9230, 0xb2},
+	{0x9231, 0xdd},
+	{0x9232, 0xe2},
+	{0x9233, 0xe1},
+	{0x9234, 0xb2},
+	{0x9235, 0xe2},
+	{0x9236, 0xb2},
+	{0x9237, 0xe3},
+	{0x9238, 0xb7},
+	{0x9239, 0xb9},
+	{0x923a, 0xb7},
+	{0x923b, 0xbb},
+	{0x923c, 0xb7},
+	{0x923d, 0xbc},
+	{0x923e, 0xb7},
+	{0x923f, 0xc5},
+	{0x9240, 0xb7},
+	{0x9241, 0xc7},
+	{0x9242, 0xb7},
+	{0x9243, 0xc9},
+	{0x9244, 0x98},
+	{0x9245, 0x56},
+	{0x9246, 0x98},
+	{0x9247, 0x55},
+	{0x9380, 0x00},
+	{0x9381, 0x62},
+	{0x9382, 0x00},
+	{0x9383, 0x56},
+	{0x9384, 0x00},
+	{0x9385, 0x52},
+	{0x9388, 0x00},
+	{0x9389, 0x55},
+	{0x938a, 0x00},
+	{0x938b, 0x55},
+	{0x938c, 0x00},
+	{0x938d, 0x41},
+	{0x5078, 0x01},
+	/* Data format: RAW12 */
+	{0x0112, 0x0c},  /* CSI_DT_FMT[15:8]: RAW12 */
+	{0x0113, 0x0c},  /* CSI_DT_FMT[7:0]: RAW12 */
+	{0x0114, 0x01},  /* CSI_LANE_MODE: 2 lanes */
+	/* Frame timing: LLP=5000 (0x1388), FLL=4800 (0x12C0) → 20 fps */
+	{0x0342, 0x13},  /* LINE_LENGTH_PCK[15:8]: 5000 — H_blank=55 */
+	{0x0343, 0x88},  /* LINE_LENGTH_PCK[7:0] */
+	{0x0340, 0x12},  /* FRM_LENGTH_LINES[15:8]: 4800 → 20 fps */
+	{0x0341, 0xc0},  /* FRM_LENGTH_LINES[7:0] */
+	{0x0350, 0x00},
+	{0x3210, 0x00},
+	/* Analog crop: full sensor (4056×3040) */
+	{0x0344, 0x00},
+	{0x0345, 0x00},
+	{0x0346, 0x00},
+	{0x0347, 0x00},
+	{0x0348, 0x0f},
+	{0x0349, 0xd7},
+	{0x034a, 0x0b},
+	{0x034b, 0xdf},
+	{0x00e3, 0x00},
+	{0x00e4, 0x00},
+	{0x00e5, 0x01},
+	{0x00fc, 0x0c},  /* RAW12 */
+	{0x00fd, 0x0c},
+	{0x00fe, 0x0c},
+	{0x00ff, 0x0c},
+	{0xe013, 0x00},
+	{0x0220, 0x00},
+	{0x0221, 0x11},
+	/* Sub-sampling */
+	{0x0381, 0x01},
+	{0x0383, 0x01},
+	{0x0385, 0x01},
+	{0x0387, 0x01},
+	{0x0900, 0x01},  /* BINNING_MODE: enabled */
+	{0x0901, 0x22},  /* BINNING_TYPE: 2x2 */
+	{0x0902, 0x02},  /* BINNING_WEIGHTING: averaging */
+	{0x3140, 0x02},
+	{0x3241, 0x11},
+	{0x3250, 0x03},
+	{0x3e10, 0x00},
+	{0x3e11, 0x00},
+	{0x3f0d, 0x00},
+	{0x3f42, 0x00},
+	{0x3f43, 0x00},
+	/* Digital processing and crop */
+	{0x0401, 0x00},
+	{0x0404, 0x00},
+	{0x0405, 0x10},
+	{0x0408, 0x00},
+	{0x0409, 0x00},
+	{0x040a, 0x00},
+	{0x040b, 0x00},
+	{0x040c, 0x07},  /* Digital crop width: 2028 */
+	{0x040d, 0xec},
+	{0x040e, 0x05},  /* Digital crop height: 1520 */
+	{0x040f, 0xf0},
+	{0x034c, 0x07},  /* X output size: 2028 */
+	{0x034d, 0xec},
+	{0x034e, 0x05},  /* Y output size: 1520 */
+	{0x034f, 0xf0},
+	/*
+	 * PLL: Single PLL mode (same as 10-bit)
+	 * VCO = 24/4 × 200 = 1200 MHz
+	 * VTPXCK = 1200/2/5 = 120 MHz
+	 * IOPSYCK = 1200/1 = 1200 Mbps/lane
+	 */
+	{0x0301, 0x05},  /* IVT_PXCK_DIV: 5 */
+	{0x0303, 0x02},  /* IVT_SYCK_DIV: 2 */
+	{0x0305, 0x04},  /* IVT_PREPLLCK_DIV: 4 (24/4 = 6 MHz ref) */
+	{0x0306, 0x00},  /* IVT_PLL_MPY[11:8]: 200 (0x00C8) */
+	{0x0307, 0xc8},  /* IVT_PLL_MPY[7:0]: VCO = 6 × 200 = 1200 MHz */
+	{0x0309, 0x0c},  /* IOP_PXCK_DIV: 12 (RAW12) */
+	{0x030b, 0x01},  /* IOP_SYCK_DIV: 1 → 1200 Mbps/lane */
+	{0x030d, 0x02},  /* IOP_PREPLLCK_DIV (ignored in single PLL) */
+	{0x030e, 0x00},  /* IOP_PLL_MPY[11:8] (ignored in single PLL) */
+	{0x030f, 0x96},  /* IOP_PLL_MPY[7:0] (ignored in single PLL) */
+	{0x0310, 0x00},  /* PLL_MULT_DRIV: 0 = single PLL */
+	/* MIPI link bit rate: 1200 Mbps/lane × 2 lanes = 2400 total (0x0960) */
+	{0x0820, 0x09},
+	{0x0821, 0x60},
+	{0x0822, 0x00},
+	{0x0823, 0x00},
+	/* Sensor-specific config */
+	{0x3e20, 0x01},
+	{0x3e37, 0x00},
+	{0x3f50, 0x00},
+	{0x3f56, 0x00},
+	{0x3f57, 0x56},
+	{0x3c0a, 0x5a},
+	{0x3c0b, 0x55},
+	{0x3c0c, 0x28},
+	{0x3c0d, 0x07},
+	{0x3c0e, 0x07},
+	{0x3c0f, 0x02},
+	{0x3c10, 0xa0},
+	{0x3c11, 0x01},
+	{0x3c12, 0x00},
+	{0x3c13, 0x03},
+	{0x3c14, 0x00},
+	{0x3c15, 0x00},
+	{0x3c16, 0x0c},
+	{0x3c17, 0x0c},
+	{0x3c18, 0x0c},
+	{0x3c19, 0x0c},
+	{0x3c1a, 0x0c},
+	{0x3c1b, 0x0c},
+	{0x3c1c, 0x00},
+	{0x3c1d, 0x00},
+	{0x3c1e, 0x00},
+	{0x3c1f, 0x00},
+	{0x3c20, 0x00},
+	{0x3c21, 0x00},
+	{0x3c22, 0x3f},
+	{0x3c23, 0x0a},
+	{0x3e35, 0x01},
+	{0x3f4a, 0x01},
+	{0x3f4b, 0x7f},
+	{0x3f26, 0x00},
+	/* Exposure and gain */
+	{0x0202, 0x12},  /* COARSE_INTEG_TIME: 4796 (0x12BC) = FLL-4 */
+	{0x0203, 0xbc},
+	{0x0204, 0x00},
+	{0x0205, 0x00},
+	{0x020e, 0x01},
+	{0x020f, 0x00},
+	{0x0210, 0x01},
+	{0x0211, 0x00},
+	{0x0212, 0x01},
+	{0x0213, 0x00},
+	{0x0214, 0x01},
+	{0x0215, 0x00},
+	{0xbcf1, 0x00},
+	{0xe000, 0x01},  /* FRAME_BLANKSTOP_CL: keep clock active (LP-11) */
+};
+
+#define IMX477_NUM_MODES	2
+
 /* Supported sensor mode configurations */
-static const struct imx477_mode supported_mode = {
+static const struct imx477_mode supported_modes[] = {
+{
 	.width = 2028,
 	.height = 1520,
 	.hblank = 2372,        /* LLP - width = 4400 - 2028 */
@@ -671,6 +942,22 @@ static const struct imx477_mode supported_mode = {
 		.num_of_regs = ARRAY_SIZE(mode_2028x1520_regs),
 		.regs = mode_2028x1520_regs,
 	},
+},
+{
+	.width = 2028,
+	.height = 1520,
+	.hblank = 2972,        /* LLP - width = 5000 - 2028 */
+	.vblank = 3280,        /* FLL - height = 4800 - 1520 */
+	.vblank_min = 20,
+	.vblank_max = 64015,   /* 65535 - 1520 */
+	.pclk = 480000000,
+	.link_freq_idx = 0,
+	.code = MEDIA_BUS_FMT_SRGGB12_1X12,
+	.reg_list = {
+		.num_of_regs = ARRAY_SIZE(mode_2028x1520_12bit_regs),
+		.regs = mode_2028x1520_12bit_regs,
+	},
+},
 };
 
 /**
@@ -860,6 +1147,7 @@ error_release_group_hold:
  *
  * Supported controls:
  * - V4L2_CID_VBLANK
+ * - V4L2_CID_DIGITAL_GAIN
  * - cluster controls:
  *   - V4L2_CID_ANALOGUE_GAIN
  *   - V4L2_CID_EXPOSURE
@@ -909,6 +1197,33 @@ static int imx477_set_ctrl(struct v4l2_ctrl *ctrl)
 		pm_runtime_put(imx477->dev);
 
 		break;
+	case V4L2_CID_DIGITAL_GAIN:
+		if (!pm_runtime_get_if_in_use(imx477->dev))
+			return 0;
+
+		dev_dbg(imx477->dev, "Received digital gain %u\n", ctrl->val);
+
+		/* Write same gain to all 4 color channels (GR, R, B, GB) */
+		ret = imx477_write_reg(imx477, IMX477_REG_HOLD, 1, 1);
+		if (!ret)
+			ret = imx477_write_reg(imx477, IMX477_REG_DIGITAL_GAIN, 2, ctrl->val);
+		if (!ret)
+			ret = imx477_write_reg(imx477, IMX477_REG_DIGITAL_GAIN + 2, 2, ctrl->val);
+		if (!ret)
+			ret = imx477_write_reg(imx477, IMX477_REG_DIGITAL_GAIN + 4, 2, ctrl->val);
+		if (!ret)
+			ret = imx477_write_reg(imx477, IMX477_REG_DIGITAL_GAIN + 6, 2, ctrl->val);
+		imx477_write_reg(imx477, IMX477_REG_HOLD, 1, 0);
+
+		pm_runtime_put(imx477->dev);
+
+		break;
+	case V4L2_CID_HBLANK:
+	case V4L2_CID_PIXEL_RATE:
+	case V4L2_CID_LINK_FREQ:
+		/* Read-only controls — updated via update_controls() */
+		ret = 0;
+		break;
 	default:
 		dev_err(imx477->dev, "Invalid control %d\n", ctrl->id);
 		ret = -EINVAL;
@@ -939,12 +1254,12 @@ static int imx477_enum_mbus_code(struct v4l2_subdev *sd,
 
 	dev_dbg(imx477->dev, "imx477_enum_mbus_code: ENTER index=%u\n", code->index);
 
-	if (code->index > 0) {
+	if (code->index >= IMX477_NUM_MODES) {
 		dev_dbg(imx477->dev, "imx477_enum_mbus_code: EXIT ret=-EINVAL\n");
 		return -EINVAL;
 	}
 
-	code->code = supported_mode.code;
+	code->code = supported_modes[code->index].code;
 
 	dev_dbg(imx477->dev, "imx477_enum_mbus_code: EXIT ret=0\n");
 	return 0;
@@ -972,15 +1287,26 @@ static int imx477_enum_frame_size(struct v4l2_subdev *sd,
 		return -EINVAL;
 	}
 
-	if (fsize->code != supported_mode.code) {
-		dev_dbg(imx477->dev, "imx477_enum_frame_size: EXIT ret=-EINVAL (code)\n");
-		return -EINVAL;
-	}
+	{
+		int i;
+		const struct imx477_mode *mode = NULL;
 
-	fsize->min_width = supported_mode.width;
-	fsize->max_width = fsize->min_width;
-	fsize->min_height = supported_mode.height;
-	fsize->max_height = fsize->min_height;
+		for (i = 0; i < IMX477_NUM_MODES; i++) {
+			if (fsize->code == supported_modes[i].code) {
+				mode = &supported_modes[i];
+				break;
+			}
+		}
+		if (!mode) {
+			dev_dbg(imx477->dev, "imx477_enum_frame_size: EXIT ret=-EINVAL (code)\n");
+			return -EINVAL;
+		}
+
+		fsize->min_width = mode->width;
+		fsize->max_width = fsize->min_width;
+		fsize->min_height = mode->height;
+		fsize->max_height = fsize->min_height;
+	}
 
 	dev_dbg(imx477->dev, "imx477_enum_frame_size: EXIT ret=0\n");
 	return 0;
@@ -1064,7 +1390,18 @@ static int imx477_set_pad_format(struct v4l2_subdev *sd,
 
 	mutex_lock(&imx477->mutex);
 
-	mode = &supported_mode;
+	/* Find mode matching requested mbus code, default to mode 0 (RAW10) */
+	mode = &supported_modes[0];
+	{
+		int i;
+
+		for (i = 0; i < IMX477_NUM_MODES; i++) {
+			if (fmt->format.code == supported_modes[i].code) {
+				mode = &supported_modes[i];
+				break;
+			}
+		}
+	}
 	imx477_fill_pad_format(imx477, mode, fmt);
 
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
@@ -1113,9 +1450,14 @@ static int imx477_get_frame_desc(struct v4l2_subdev *sd, unsigned int pad,
 	fd->entry[0].flags = 0;
 	fd->entry[0].pixelcode = mode->code;
 	fd->entry[0].stream = 0;
-	fd->entry[0].length = mode->width * mode->height * 10 / 8;
+	if (mode->code == MEDIA_BUS_FMT_SRGGB12_1X12) {
+		fd->entry[0].length = mode->width * mode->height * 12 / 8;
+		fd->entry[0].bus.csi2.dt = 0x2c; /* RAW12 */
+	} else {
+		fd->entry[0].length = mode->width * mode->height * 10 / 8;
+		fd->entry[0].bus.csi2.dt = 0x2b; /* RAW10 */
+	}
 	fd->entry[0].bus.csi2.vc = 0;
-	fd->entry[0].bus.csi2.dt = 0x2b; /* RAW10 */
 
 	dev_dbg(imx477->dev, "imx477_get_frame_desc: EXIT ret=0\n");
 	return 0;
@@ -1138,7 +1480,7 @@ static int imx477_init_state(struct v4l2_subdev *sd,
 	dev_dbg(imx477->dev, "imx477_init_state: ENTER\n");
 
 	fmt.which = sd_state ? V4L2_SUBDEV_FORMAT_TRY : V4L2_SUBDEV_FORMAT_ACTIVE;
-	imx477_fill_pad_format(imx477, &supported_mode, &fmt);
+	imx477_fill_pad_format(imx477, &supported_modes[0], &fmt);
 
 	ret = imx477_set_pad_format(sd, sd_state, &fmt);
 	dev_dbg(imx477->dev, "imx477_init_state: EXIT ret=%d\n", ret);
@@ -1922,7 +2264,7 @@ static int imx477_init_controls(struct imx477 *imx477)
 
 	dev_dbg(imx477->dev, "imx477_init_controls: ENTER\n");
 
-	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 6);
+	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 7);
 	if (ret) {
 		dev_dbg(imx477->dev, "imx477_init_controls: EXIT ret=%d\n", ret);
 		return ret;
@@ -1950,6 +2292,14 @@ static int imx477_init_controls(struct imx477 *imx477)
 					       IMX477_AGAIN_DEFAULT);
 
 	v4l2_ctrl_cluster(2, &imx477->exp_ctrl);
+
+	imx477->dgain_ctrl = v4l2_ctrl_new_std(ctrl_hdlr,
+					       &imx477_ctrl_ops,
+					       V4L2_CID_DIGITAL_GAIN,
+					       IMX477_DGTL_GAIN_MIN,
+					       IMX477_DGTL_GAIN_MAX,
+					       IMX477_DGTL_GAIN_STEP,
+					       IMX477_DGTL_GAIN_DEFAULT);
 
 	imx477->vblank_ctrl = v4l2_ctrl_new_std(ctrl_hdlr,
 						&imx477_ctrl_ops,
@@ -2051,8 +2401,8 @@ static int imx477_probe(struct i2c_client *client)
 		goto error_power_off;
 	}
 
-	/* Set default mode to max resolution */
-	imx477->cur_mode = &supported_mode;
+	/* Set default mode to RAW10 */
+	imx477->cur_mode = &supported_modes[0];
 	imx477->vblank = imx477->cur_mode->vblank;
 
 	ret = imx477_init_controls(imx477);
@@ -2099,8 +2449,8 @@ static int imx477_probe(struct i2c_client *client)
 	pm_runtime_enable(imx477->dev);
 	pm_runtime_idle(imx477->dev);
 
-	dev_info(imx477->dev, "IMX477: Mode: %ux%u RAW10, link_freq=%lld Hz\n",
-		 supported_mode.width, supported_mode.height, link_freq[0]);
+	dev_info(imx477->dev, "IMX477: %ux%u RAW10/RAW12, link_freq=%lld Hz\n",
+		 supported_modes[0].width, supported_modes[0].height, link_freq[0]);
 
 	dev_dbg(imx477->dev, "imx477_probe: EXIT ret=0\n");
 	return 0;
