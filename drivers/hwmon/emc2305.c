@@ -118,6 +118,7 @@ struct emc2305_data {
 	bool pwm_separate;
 	u8 pwm_min[EMC2305_PWM_MAX];
 	u16 pwm_freq[EMC2305_PWM_MAX];
+	const char *pwm_label[EMC2305_PWM_MAX];
 	struct emc2305_cdev_data cdev_data[EMC2305_PWM_MAX];
 };
 
@@ -191,8 +192,6 @@ static int __emc2305_set_cur_state(struct emc2305_data *data, int cdev_idx, unsi
 	int ret;
 	struct i2c_client *client = data->client;
 	u8 val, i;
-
-	state = max_t(unsigned long, state, data->cdev_data[cdev_idx].last_hwmon_state);
 
 	val = EMC2305_PWM_STATE2DUTY(state, data->max_state, EMC2305_FAN_MAX);
 
@@ -375,6 +374,8 @@ emc2305_is_visible(const void *data, enum hwmon_sensor_types type, u32 attr, int
 			return 0444;
 		case hwmon_fan_fault:
 			return 0444;
+		case hwmon_fan_label:
+			return 0444;
 		default:
 			break;
 		}
@@ -397,32 +398,10 @@ emc2305_is_visible(const void *data, enum hwmon_sensor_types type, u32 attr, int
 static int
 emc2305_write(struct device *dev, enum hwmon_sensor_types type, u32 attr, int channel, long val)
 {
-	struct emc2305_data *data = dev_get_drvdata(dev);
-	int cdev_idx;
-
 	switch (type) {
 	case hwmon_pwm:
 		switch (attr) {
 		case hwmon_pwm_input:
-			/* If thermal is configured - handle PWM limit setting. */
-			if (IS_REACHABLE(CONFIG_THERMAL)) {
-				if (data->pwm_separate)
-					cdev_idx = channel;
-				else
-					cdev_idx = 0;
-				data->cdev_data[cdev_idx].last_hwmon_state =
-					EMC2305_PWM_DUTY2STATE(val, data->max_state,
-							       EMC2305_FAN_MAX);
-				/*
-				 * Update PWM only in case requested state is not less than the
-				 * last thermal state.
-				 */
-				if (data->cdev_data[cdev_idx].last_hwmon_state >=
-				    data->cdev_data[cdev_idx].last_thermal_state)
-					return __emc2305_set_cur_state(data, cdev_idx,
-							data->cdev_data[cdev_idx].last_hwmon_state);
-				return 0;
-			}
 			return emc2305_set_pwm(dev, val, channel);
 		default:
 			break;
@@ -478,19 +457,36 @@ emc2305_read(struct device *dev, enum hwmon_sensor_types type, u32 attr, int cha
 	return -EOPNOTSUPP;
 };
 
+static int
+emc2305_read_string(struct device *dev, enum hwmon_sensor_types type, u32 attr,
+		    int channel, const char **str)
+{
+	struct emc2305_data *data = dev_get_drvdata(dev);
+
+	if (channel >= data->pwm_num || !data->pwm_label[channel])
+		return -EOPNOTSUPP;
+
+	if (type == hwmon_fan && attr == hwmon_fan_label) {
+		*str = data->pwm_label[channel];
+		return 0;
+	}
+	return -EOPNOTSUPP;
+}
+
 static const struct hwmon_ops emc2305_ops = {
 	.is_visible = emc2305_is_visible,
 	.read = emc2305_read,
+	.read_string = emc2305_read_string,
 	.write = emc2305_write,
 };
 
 static const struct hwmon_channel_info * const emc2305_info[] = {
 	HWMON_CHANNEL_INFO(fan,
-			   HWMON_F_INPUT | HWMON_F_FAULT,
-			   HWMON_F_INPUT | HWMON_F_FAULT,
-			   HWMON_F_INPUT | HWMON_F_FAULT,
-			   HWMON_F_INPUT | HWMON_F_FAULT,
-			   HWMON_F_INPUT | HWMON_F_FAULT),
+			   HWMON_F_INPUT | HWMON_F_FAULT | HWMON_F_LABEL,
+			   HWMON_F_INPUT | HWMON_F_FAULT | HWMON_F_LABEL,
+			   HWMON_F_INPUT | HWMON_F_FAULT | HWMON_F_LABEL,
+			   HWMON_F_INPUT | HWMON_F_FAULT | HWMON_F_LABEL,
+			   HWMON_F_INPUT | HWMON_F_FAULT | HWMON_F_LABEL),
 	HWMON_CHANNEL_INFO(pwm,
 			   HWMON_PWM_INPUT,
 			   HWMON_PWM_INPUT,
@@ -577,6 +573,8 @@ static int emc2305_of_parse_pwm_child(struct device *dev,
 	} else {
 		data->pwm_output_mask |= EMC2305_OPEN_DRAIN << ch;
 	}
+
+	of_property_read_string(child, "label", &data->pwm_label[ch]);
 
 	return 0;
 }
@@ -669,7 +667,7 @@ static int emc2305_probe(struct i2c_client *client)
 		}
 	} else {
 		data->max_state = EMC2305_FAN_MAX_STATE;
-		data->pwm_separate = false;
+		data->pwm_separate = true;
 		for (i = 0; i < EMC2305_PWM_MAX; i++)
 			data->pwm_min[i] = EMC2305_FAN_MIN;
 	}
@@ -682,12 +680,19 @@ static int emc2305_probe(struct i2c_client *client)
 	if (IS_REACHABLE(CONFIG_THERMAL)) {
 		/* Parse and check for the available PWM child nodes */
 		if (pwm_childs > 0) {
-			i = 0;
 			for_each_child_of_node(dev->of_node, child) {
-				ret = emc2305_set_single_tz(dev, child, i);
+				u32 ch;
+
+				if (of_property_read_u32(child, "reg", &ch))
+					continue;
+				/*
+				 * Pass ch+1 so emc2305_set_single_tz computes
+				 * cdev_idx = ch (matching the channel/pwm number)
+				 * and uses name "emc2305_fan<ch+1>".
+				 */
+				ret = emc2305_set_single_tz(dev, child, ch + 1);
 				if (ret != 0)
 					return ret;
-				i++;
 			}
 		} else {
 			ret = emc2305_set_tz(dev);
