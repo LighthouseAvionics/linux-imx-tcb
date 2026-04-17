@@ -1397,17 +1397,20 @@ static int mxc_isi_video_streamon(struct file *file, void *priv,
 
 	/* Verify that the video format matches the output of the subdev. */
 	ret = mxc_isi_video_validate_format(video);
-	if (ret)
+	if (ret) {
 		goto err_stop;
+	}
 
 	/* Allocate buffers for discard operation. */
 	ret = mxc_isi_video_alloc_discard_buffers(video);
-	if (ret)
+	if (ret) {
 		goto err_stop;
+	}
 
 	ret = vb2_streamon(&video->vb2_q, type);
-	if (ret)
+	if (ret) {
 		goto err_free;
+	}
 
 	video->is_streaming = true;
 

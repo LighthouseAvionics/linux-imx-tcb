@@ -187,10 +187,12 @@ struct regmap *devm_cci_regmap_init_i2c(struct i2c_client *client,
 					int reg_addr_bits)
 {
 	struct regmap_config config = {
+		.name = "cci",
 		.reg_bits = reg_addr_bits,
 		.val_bits = 8,
 		.reg_format_endian = REGMAP_ENDIAN_BIG,
 		.disable_locking = true,
+		.max_register = (1U << reg_addr_bits) - 1,
 	};
 
 	return devm_regmap_init_i2c(client, &config);

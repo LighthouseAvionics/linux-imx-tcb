@@ -8,7 +8,7 @@
 #include "imx95-var-dart.dtsi"
 
 / {
-	model = "Variscite DART-MX95 on C1 x Lighthouse";
+	model = "Variscite DART-MX95 Lighthouse v3 GMSL";
 
 	aliases {
 		mmc0 = &usdhc1;
@@ -48,11 +48,7 @@
 		stdout-path = &lpuart1;
 	};
 
-	clk_imx477_fixed: clock-imx477 {
-		#clock-cells = <0>;
-		compatible = "fixed-clock";
-		clock-frequency = <24000000>;
-	};
+	/* IMX477 clock provided by MAX96717 serializer in GMSL setup */
 
 	gpio-leds {
 		compatible = "gpio-leds";
@@ -125,6 +121,7 @@
 		maximum-power-milliwatt = <2000>;
 		status = "okay";
 	};
+
 };
 
 &combo_rx {
@@ -282,38 +279,336 @@
 	};
 };
 
-&lpi2c3 {
+&lpi2c4 {
 	#address-cells = <1>;
 	#size-cells = <0>;
 	clock-frequency = <400000>;
-	pinctrl-names = "default", "gpio", "sleep";
-	pinctrl-0 = <&pinctrl_lpi2c3>;
-	pinctrl-1 = <&pinctrl_lpi2c3_gpio>;
-	pinctrl-2 = <&pinctrl_lpi2c3_gpio>;
-	scl-gpios = <&gpio2 28 GPIO_ACTIVE_HIGH>;
-	sda-gpios = <&gpio2 29 GPIO_ACTIVE_HIGH>;
+	pinctrl-names = "default", "sleep";
+	pinctrl-0 = <&pinctrl_lpi2c4>;
+	pinctrl-1 = <&pinctrl_lpi2c4>;
 	status = "okay";
 
-	// /* IMX477 camera on CSI0 */
-	// imx477_0: imx477@1a {
-	// 	compatible = "sony,imx477";
-	// 	reg = <0x1a>;
-	// 	clocks = <&clk_imx477_fixed>;
-	// 	clock-names = "xclk";
-	// 	assigned-clock-rates = <24000000>;
-	// 	enable-gpios = <&gpio5 15 GPIO_ACTIVE_HIGH>;
-	// 	status = "okay";
+	/* MAX96724 GMSL2 quad deserializer */
+	max96724: max96724@27 {
+		compatible = "maxim,max96724";
+		reg = <0x27>;
+		maxim,gmsl-speed = <3>;  /* 3Gbps to match MAX96717 serializers */
+		status = "okay";
 
-	// 	port {
-	// 		imx477_0_ep: endpoint {
-	// 			// clock-noncontinuous;
-	// 			remote-endpoint = <&mipi_csi0_ep>;
-	// 			data-lanes = <1 2>;
-	// 			clock-lanes = <0>;
-	// 			link-frequencies = /bits/ 64 <600000000>;
-	// 		};
-	// 	};
-	// };
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			/* GMSL Link A - Camera 0 */
+			port@0 {
+				reg = <0>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				max96724_gmsl_a_in: endpoint@0 {
+					reg = <0>;
+					remote-endpoint = <&max96717_0_gmsl_out>;
+				};
+				max96724_pipe_0_out: endpoint@1 {
+					reg = <1>;
+					remote-endpoint = <&max96724_csi_0_in_0>;
+				};
+			};
+
+			/* GMSL Link B - Camera 1 */
+			port@1 {
+				reg = <1>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				max96724_gmsl_b_in: endpoint@0 {
+					reg = <0>;
+					remote-endpoint = <&max96717_1_gmsl_out>;
+				};
+				max96724_pipe_1_out: endpoint@1 {
+					reg = <1>;
+					remote-endpoint = <&max96724_csi_0_in_1>;
+				};
+			};
+
+			/* GMSL Link C - Camera 2 */
+			port@2 {
+				reg = <2>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				max96724_gmsl_c_in: endpoint@0 {
+					reg = <0>;
+					remote-endpoint = <&max96717_2_gmsl_out>;
+				};
+				max96724_pipe_2_out: endpoint@1 {
+					reg = <1>;
+					remote-endpoint = <&max96724_csi_0_in_2>;
+				};
+			};
+
+			/* GMSL Link D - Camera 3 */
+			port@3 {
+				reg = <3>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				max96724_gmsl_d_in: endpoint@0 {
+					reg = <0>;
+					remote-endpoint = <&max96717_3_gmsl_out>;
+				};
+				max96724_pipe_3_out: endpoint@1 {
+					reg = <1>;
+					remote-endpoint = <&max96724_csi_0_in_3>;
+				};
+			};
+
+			/* CSI-2 Output Port A -> mipi_csi0 */
+			port@4 {
+				reg = <4>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				max96724_csi_0_in_0: endpoint@0 {
+					reg = <0>;
+					remote-endpoint = <&max96724_pipe_0_out>;
+				};
+				max96724_csi_0_in_1: endpoint@1 {
+					reg = <1>;
+					remote-endpoint = <&max96724_pipe_1_out>;
+				};
+				max96724_csi_0_in_2: endpoint@2 {
+					reg = <2>;
+					remote-endpoint = <&max96724_pipe_2_out>;
+				};
+				max96724_csi_0_in_3: endpoint@3 {
+					reg = <3>;
+					remote-endpoint = <&max96724_pipe_3_out>;
+				};
+				max96724_csi_0_out: endpoint@4 {
+					reg = <4>;
+					data-lanes = <1 2>;
+					remote-endpoint = <&mipi_csi0_ep>;
+				};
+			};
+		};
+
+		i2c-mux {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			/* GMSL Link A */
+			i2c@0 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				reg = <0>;
+
+				max96717_0: serializer@42 {
+					compatible = "maxim,max96717", "maxim,max96717f";
+					reg = <0x42>;
+					gpio-controller;
+					#gpio-cells = <2>;
+					#clock-cells = <0>;
+
+					ports {
+						#address-cells = <1>;
+						#size-cells = <0>;
+						port@0 {
+							reg = <0>;
+							max96717_0_csi_in: endpoint {
+								data-lanes = <1 2>;
+								remote-endpoint = <&imx477_0_ep>;
+							};
+						};
+						port@1 {
+							reg = <1>;
+							max96717_0_gmsl_out: endpoint {
+								remote-endpoint = <&max96724_gmsl_a_in>;
+							};
+						};
+					};
+
+					i2c-gate {
+						#address-cells = <1>;
+						#size-cells = <0>;
+						imx477_0: sensor@1a {
+							compatible = "sony,imx477";
+							reg = <0x1a>;
+							clocks = <&max96717_0>;
+							clock-names = "xclk";
+							enable-gpios = <&max96717_0 0 GPIO_ACTIVE_HIGH>;
+							port {
+								imx477_0_ep: endpoint {
+									data-lanes = <1 2>;
+									link-frequencies = /bits/ 64 <600000000>;
+									remote-endpoint = <&max96717_0_csi_in>;
+								};
+							};
+						};
+					};
+				};
+			};
+
+			/* GMSL Link B */
+			i2c@1 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				reg = <1>;
+
+				max96717_1: serializer@42 {
+					compatible = "maxim,max96717", "maxim,max96717f";
+					reg = <0x42>;
+					gpio-controller;
+					#gpio-cells = <2>;
+					#clock-cells = <0>;
+
+					ports {
+						#address-cells = <1>;
+						#size-cells = <0>;
+						port@0 {
+							reg = <0>;
+							max96717_1_csi_in: endpoint {
+								data-lanes = <1 2>;
+								remote-endpoint = <&imx477_1_ep>;
+							};
+						};
+						port@1 {
+							reg = <1>;
+							max96717_1_gmsl_out: endpoint {
+								remote-endpoint = <&max96724_gmsl_b_in>;
+							};
+						};
+					};
+
+					i2c-gate {
+						#address-cells = <1>;
+						#size-cells = <0>;
+						imx477_1: sensor@1a {
+							compatible = "sony,imx477";
+							reg = <0x1a>;
+							clocks = <&max96717_1>;
+							clock-names = "xclk";
+							enable-gpios = <&max96717_1 0 GPIO_ACTIVE_HIGH>;
+							port {
+								imx477_1_ep: endpoint {
+									data-lanes = <1 2>;
+									link-frequencies = /bits/ 64 <600000000>;
+									remote-endpoint = <&max96717_1_csi_in>;
+								};
+							};
+						};
+					};
+				};
+			};
+
+			/* GMSL Link C */
+			i2c@2 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				reg = <2>;
+
+				max96717_2: serializer@42 {
+					compatible = "maxim,max96717", "maxim,max96717f";
+					reg = <0x42>;
+					gpio-controller;
+					#gpio-cells = <2>;
+					#clock-cells = <0>;
+
+					ports {
+						#address-cells = <1>;
+						#size-cells = <0>;
+						port@0 {
+							reg = <0>;
+							max96717_2_csi_in: endpoint {
+								data-lanes = <1 2>;
+								remote-endpoint = <&imx477_2_ep>;
+							};
+						};
+						port@1 {
+							reg = <1>;
+							max96717_2_gmsl_out: endpoint {
+								remote-endpoint = <&max96724_gmsl_c_in>;
+							};
+						};
+					};
+
+					i2c-gate {
+						#address-cells = <1>;
+						#size-cells = <0>;
+						imx477_2: sensor@1a {
+							compatible = "sony,imx477";
+							reg = <0x1a>;
+							clocks = <&max96717_2>;
+							clock-names = "xclk";
+							enable-gpios = <&max96717_2 0 GPIO_ACTIVE_HIGH>;
+							port {
+								imx477_2_ep: endpoint {
+									data-lanes = <1 2>;
+									link-frequencies = /bits/ 64 <600000000>;
+									remote-endpoint = <&max96717_2_csi_in>;
+								};
+							};
+						};
+					};
+				};
+			};
+
+			/* GMSL Link D */
+			i2c@3 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				reg = <3>;
+
+				max96717_3: serializer@42 {
+					compatible = "maxim,max96717", "maxim,max96717f";
+					reg = <0x42>;
+					gpio-controller;
+					#gpio-cells = <2>;
+					#clock-cells = <0>;
+
+					ports {
+						#address-cells = <1>;
+						#size-cells = <0>;
+						port@0 {
+							reg = <0>;
+							max96717_3_csi_in: endpoint {
+								data-lanes = <1 2>;
+								remote-endpoint = <&imx477_3_ep>;
+							};
+						};
+						port@1 {
+							reg = <1>;
+							max96717_3_gmsl_out: endpoint {
+								remote-endpoint = <&max96724_gmsl_d_in>;
+							};
+						};
+					};
+
+					i2c-gate {
+						#address-cells = <1>;
+						#size-cells = <0>;
+						imx477_3: sensor@1a {
+							compatible = "sony,imx477";
+							reg = <0x1a>;
+							clocks = <&max96717_3>;
+							clock-names = "xclk";
+							enable-gpios = <&max96717_3 0 GPIO_ACTIVE_HIGH>;
+							port {
+								imx477_3_ep: endpoint {
+									data-lanes = <1 2>;
+									link-frequencies = /bits/ 64 <600000000>;
+									remote-endpoint = <&max96717_3_csi_in>;
+								};
+							};
+						};
+					};
+				};
+			};
+		};
+	};
 
 	/* DS1337 RTC module */
 	rtc@68 {
@@ -368,39 +663,6 @@
 	// };
 
 };
-
-&lpi2c4 {
-	#address-cells = <1>;
-	#size-cells = <0>;
-	clock-frequency = <400000>;
-	pinctrl-names = "default", "sleep";
-	pinctrl-0 = <&pinctrl_lpi2c4>;
-	pinctrl-1 = <&pinctrl_lpi2c4>;
-	status = "okay";
-
-	/* IMX477 camera on CSI0 */
-	imx477_0: imx477@1a {
-		compatible = "sony,imx477";
-		reg = <0x1a>;
-		clocks = <&clk_imx477_fixed>;
-		clock-names = "xclk";
-		assigned-clock-rates = <24000000>;
-		enable-gpios = <&gpio5 15 GPIO_ACTIVE_HIGH>;
-		status = "okay";
-
-		port {
-			imx477_0_ep: endpoint {
-				// clock-noncontinuous;
-				remote-endpoint = <&mipi_csi0_ep>;
-				data-lanes = <1 2>;
-				clock-lanes = <0>;
-				link-frequencies = /bits/ 64 <600000000>;
-			};
-		};
-	};
-};
-
-
 
 &lpi2c8 {
 	
@@ -498,6 +760,7 @@
 
 &mipi_csi0 {
 	status = "okay";
+	virtual-channel;
 
 	ports {
 		#address-cells = <1>;
@@ -506,7 +769,7 @@
 		port@0 {
 			reg = <0>;
 			mipi_csi0_ep: endpoint {
-				remote-endpoint = <&imx477_0_ep>;
+				remote-endpoint = <&max96724_csi_0_out>;
 				data-lanes = <1 2>;
 				clock-lanes = <0>;
 			};

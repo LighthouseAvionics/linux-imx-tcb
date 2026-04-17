@@ -557,6 +557,7 @@ static int dwc_csi_device_pg_enable(struct dwc_csi_device *csidev)
 	struct v4l2_mbus_framefmt *fmt;
 	struct v4l2_subdev_state *state;
 	u32 val;
+	int ret = 0;
 
 	dev_dbg(csidev->dev, "dwc_csi_device_pg_enable: ENTER\n");
 
@@ -568,13 +569,15 @@ static int dwc_csi_device_pg_enable(struct dwc_csi_device *csidev)
 	if (!csi_fmt) {
 		dev_err(csidev->dev, "CSI pixel format is NULL\n");
 		dev_dbg(csidev->dev, "dwc_csi_device_pg_enable: EXIT ret=-EINVAL (NULL fmt)\n");
-		return -EINVAL;
+		ret = -EINVAL;
+		return ret;
 	}
 
 	if (csi_fmt->data_type != MIPI_CSI2_DT_RGB888) {
 		dev_err(csidev->dev, "Pattern generator only support RGB888\n");
 		dev_dbg(csidev->dev, "dwc_csi_device_pg_enable: EXIT ret=-EINVAL (not RGB888)\n");
-		return -EINVAL;
+		ret = -EINVAL;
+		return ret;
 	}
 
 	state = v4l2_subdev_lock_and_get_active_state(sd);
@@ -986,23 +989,19 @@ static int __dwc_csi_subdev_set_routing(struct v4l2_subdev *sd,
 {
 	int ret;
 
-	pr_info("CSI: __dwc_csi_subdev_set_routing: ENTER\n");
 
 	if (routing->num_routes > V4L2_FRAME_DESC_ENTRY_MAX) {
-		pr_info("CSI: __dwc_csi_subdev_set_routing: EXIT ret=-EINVAL (too many routes)\n");
 		return -EINVAL;
 	}
 
 	ret = v4l2_subdev_routing_validate(sd, routing,
 					   V4L2_SUBDEV_ROUTING_ONLY_1_TO_1);
 	if (ret) {
-		pr_info("CSI: __dwc_csi_subdev_set_routing: EXIT ret=%d (validate failed)\n", ret);
 		return ret;
 	}
 
 	ret = v4l2_subdev_set_routing_with_fmt(sd, state, routing,
 						&dwc_csi_default_fmt);
-	pr_info("CSI: __dwc_csi_subdev_set_routing: EXIT ret=%d\n", ret);
 	return ret;
 }
 
@@ -1025,9 +1024,7 @@ static int dwc_csi_subdev_init_state(struct v4l2_subdev *sd,
 	};
 	int ret;
 
-	pr_info("CSI: dwc_csi_subdev_init_state: ENTER\n");
 	ret = __dwc_csi_subdev_set_routing(sd, sd_state, &routing);
-	pr_info("CSI: dwc_csi_subdev_init_state: EXIT ret=%d\n", ret);
 	return ret;
 }
 

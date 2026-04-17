@@ -988,10 +988,8 @@ static int imx477_read_reg(struct imx477 *imx477, u16 reg, u32 len, u32 *val)
 	u8 data_buf[4] = {0};
 	int ret;
 
-
-	if (WARN_ON(len > 4)) {
+	if (WARN_ON(len > 4))
 		return -EINVAL;
-	}
 
 	put_unaligned_be16(reg, addr_buf);
 
@@ -1008,9 +1006,8 @@ static int imx477_read_reg(struct imx477 *imx477, u16 reg, u32 len, u32 *val)
 	msgs[1].buf = &data_buf[4 - len];
 
 	ret = i2c_transfer(client->adapter, msgs, ARRAY_SIZE(msgs));
-	if (ret != ARRAY_SIZE(msgs)) {
+	if (ret != ARRAY_SIZE(msgs))
 		return -EIO;
-	}
 
 	*val = get_unaligned_be32(data_buf);
 
@@ -1031,16 +1028,13 @@ static int imx477_write_reg(struct imx477 *imx477, u16 reg, u32 len, u32 val)
 	struct i2c_client *client = v4l2_get_subdevdata(&imx477->sd);
 	u8 buf[6] = {0};
 
-
-	if (WARN_ON(len > 4)) {
+	if (WARN_ON(len > 4))
 		return -EINVAL;
-	}
 
 	put_unaligned_be16(reg, buf);
 	put_unaligned_be32(val << (8 * (4 - len)), buf + 2);
-	if (i2c_master_send(client, buf, len + 2) != len + 2) {
+	if (i2c_master_send(client, buf, len + 2) != len + 2)
 		return -EIO;
-	}
 
 	return 0;
 }
@@ -1058,7 +1052,6 @@ static int imx477_write_regs(struct imx477 *imx477,
 {
 	unsigned int i;
 	int ret;
-
 
 	for (i = 0; i < len; i++) {
 		ret = imx477_write_reg(imx477, regs[i].address, 1, regs[i].val);
@@ -1132,14 +1125,12 @@ static int imx477_update_exp_gain(struct imx477 *imx477, u32 exposure, u32 gain)
 	}
 
 	ret = imx477_write_reg(imx477, IMX477_REG_LPFR, 2, lpfr);
-	if (ret) {
+	if (ret)
 		goto error_release_group_hold;
-	}
 
 	ret = imx477_write_reg(imx477, IMX477_REG_EXPOSURE_CIT, 2, exposure);
-	if (ret) {
+	if (ret)
 		goto error_release_group_hold;
-	}
 
 	ret = imx477_write_reg(imx477, IMX477_REG_AGAIN, 2, gain);
 
@@ -1207,9 +1198,8 @@ static int imx477_set_ctrl(struct v4l2_ctrl *ctrl)
 
 		break;
 	case V4L2_CID_DIGITAL_GAIN:
-		if (!pm_runtime_get_if_in_use(imx477->dev)) {
+		if (!pm_runtime_get_if_in_use(imx477->dev))
 			return 0;
-		}
 
 		dev_dbg(imx477->dev, "Received digital gain %u\n", ctrl->val);
 
@@ -1840,9 +1830,8 @@ static int imx477_parse_hw_config(struct imx477 *imx477)
 	}
 
 	for (i = 0; i < bus_cfg.nr_of_link_frequencies; i++)
-		if (bus_cfg.link_frequencies[i] == IMX477_LINK_FREQ) {
+		if (bus_cfg.link_frequencies[i] == IMX477_LINK_FREQ)
 			goto done_endpoint_free;
-		}
 	dev_err(imx477->dev, "link frequency %lu is not supported\n",
 		IMX477_LINK_FREQ);
 	ret = -EINVAL;
