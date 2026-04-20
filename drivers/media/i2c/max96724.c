@@ -112,6 +112,23 @@ struct max96724_priv {
 	int csi2_data_lanes[MAX96724_N_SOURCES];
 	unsigned int csi2_video_pipe_mask[MAX96724_N_SOURCES];
 
+	/*
+	 * Per-source precomputed MIPI PHY register bytes derived from the
+	 * standard V4L2 endpoint properties (data-lanes, lane-polarities) on
+	 * the deserializer's CSI output endpoint. See
+	 * max96724_dt_parse_source_ep() for the translation from DT to these
+	 * bytes.
+	 *
+	 *   mipi_phy_lane_map[i] -> MAX96724_MIPI_PHY_4+i (0x08A4, lane reorder)
+	 *   mipi_phy_polarity[i] -> MAX96724_MIPI_PHY_5+i (0x08A5, P/N invert)
+	 *
+	 * 0x08A5 bit layout:
+	 *   [5]PHY1_CLK [4]PHY1_D1 [3]PHY1_D0
+	 *   [2]PHY0_CLK [1]PHY0_D1 [0]PHY0_D0
+	 */
+	u8 mipi_phy_lane_map[MAX96724_N_SOURCES];
+	u8 mipi_phy_polarity[MAX96724_N_SOURCES];
+
 	int enable_count;
 };
 
@@ -478,6 +495,58 @@ static int max96724_dt_parse_source_ep(struct max96724_priv *priv, struct device
 	if (priv->csi2_data_lanes[csi_port] != 2 && priv->csi2_data_lanes[csi_port] != 4) {
 		dev_err(dev, "Only 2 or 4 lanes are supported.");
 		return -EINVAL;
+	}
+
+	/*
+	 * Translate V4L2 endpoint data-lanes[] / lane-polarities[] into the
+	 * MAX96724's per-PHY register bytes.
+	 *
+	 * data-lanes = <L0 L1 L2 L3>  (1-based logical lane numbers at each
+	 *   physical position) -> MAX96724_MIPI_PHY_4 (0x08A4) with two-bit
+	 *   fields per physical slot encoding (logical - 1).
+	 *
+	 * lane-polarities = <clk, d1, d2, d3, d4>  (0 = normal, 1 = inverted)
+	 *   -> MAX96724_MIPI_PHY_5 (0x08A5). In 2x4 combined mode on a port,
+	 *   PHY0 + PHY1 both appear; clock polarity applies to both; data
+	 *   polarities map physical 0->PHY0_D0 (bit 0), physical 1->PHY0_D1
+	 *   (bit 1), physical 2->PHY1_D0 (bit 3), physical 3->PHY1_D1 (bit 4).
+	 */
+	{
+		const u8 *lanes = vep.bus.mipi_csi2.data_lanes;
+		const bool *pol = vep.bus.mipi_csi2.lane_polarities;
+		unsigned int n = vep.bus.mipi_csi2.num_data_lanes;
+		u8 map = 0;
+		u8 polarity = 0;
+		unsigned int i;
+
+		/*
+		 * Lane reorder byte. Each physical slot's two-bit field encodes
+		 * the logical lane number - 1. Slots beyond num_data_lanes are
+		 * written as 0 (DT-authoritative, no vendor-default padding).
+		 */
+		for (i = 0; i < n; i++)
+			map |= ((lanes[i] - 1) & 0x3) << (2 * i);
+		priv->mipi_phy_lane_map[csi_port] = map;
+
+		/*
+		 * Polarity byte. pol[0] = clock, pol[1..n] = data lanes 1..n.
+		 * Physical slot -> PHY register bit:
+		 *   clock -> PHY0_CLK (bit 2) + PHY1_CLK (bit 5)
+		 *   data 0 -> PHY0_D0 (bit 0)
+		 *   data 1 -> PHY0_D1 (bit 1)
+		 *   data 2 -> PHY1_D0 (bit 3)
+		 *   data 3 -> PHY1_D1 (bit 4)
+		 */
+		if (pol[0]) polarity |= BIT(2) | BIT(5);
+		if (n >= 1 && pol[1]) polarity |= BIT(0);
+		if (n >= 2 && pol[2]) polarity |= BIT(1);
+		if (n >= 3 && pol[3]) polarity |= BIT(3);
+		if (n >= 4 && pol[4]) polarity |= BIT(4);
+		priv->mipi_phy_polarity[csi_port] = polarity;
+
+		dev_info(dev,
+			 "CSI%u lane_map=0x%02x polarity=0x%02x (from DT bindings)\n",
+			 csi_port, map, polarity);
 	}
 
 	return 0;
@@ -962,14 +1031,27 @@ static int max96724_dphy_config(struct max96724_priv *priv)
 	}
 
 	for (i = 0; i < MAX96724_N_SOURCES; i++) {
-		/* map the d-phy lanes */
-		if (priv->csi2_data_lanes[i] == 4)
-			regmap_write(priv->rmap, MAX96724_MIPI_PHY_4 + i, 0xE4);
-		else if (priv->csi2_data_lanes[i] == 2)
-			regmap_write(priv->rmap, MAX96724_MIPI_PHY_4 + i, 0x44);
-
-		/* map the polarities */
-		regmap_write(priv->rmap, MAX96724_MIPI_PHY_5 + i, 0x0); /* normal polarities */
+		/*
+		 * Lane mapping (physical->logical) and polarity come exclusively
+		 * from the standard V4L2 endpoint bindings (data-lanes,
+		 * lane-polarities) parsed in max96724_dt_parse_source_ep().
+		 *
+		 * Register layout:
+		 *   0x08A3 (MIPI_PHY_3) = PHY0+PHY1 lane map  -> source 0 (Port A)
+		 *   0x08A4 (MIPI_PHY_4) = PHY2+PHY3 lane map  -> source 1 (Port B)
+		 *   0x08A5 (MIPI_PHY_5) = PHY0+PHY1 polarity  -> source 0
+		 *   0x08A6 (MIPI_PHY_6) = PHY2+PHY3 polarity  -> source 1
+		 *
+		 * Note: the original driver used MIPI_PHY_4+i as the lane-map
+		 * base, which was off-by-one — it wrote Port A's map into
+		 * Port B's register. That was harmless when only one source was
+		 * configured (Port A's reset default already matched intent).
+		 * Using the correct base here so both sources can coexist.
+		 */
+		regmap_write(priv->rmap, MAX96724_MIPI_PHY_3 + i,
+			     priv->mipi_phy_lane_map[i]);
+		regmap_write(priv->rmap, MAX96724_MIPI_PHY_5 + i,
+			     priv->mipi_phy_polarity[i]);
 	}
 
 	return 0;
@@ -1754,6 +1836,7 @@ static int max96724_probe(struct i2c_client *client)
 					 speed_gbps);
 		}
 	}
+
 
 	ret = max96724_chip_init(priv);
 	if (ret) {

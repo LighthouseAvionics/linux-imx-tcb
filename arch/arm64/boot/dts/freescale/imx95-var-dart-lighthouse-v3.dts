@@ -279,6 +279,7 @@
 	};
 };
 
+
 &lpi2c4 {
 	#address-cells = <1>;
 	#size-cells = <0>;
@@ -390,7 +391,13 @@
 				};
 				max96724_csi_0_out: endpoint@4 {
 					reg = <4>;
-					data-lanes = <1 2>;
+					data-lanes = <1 2 3 4>;
+					/*
+					 * Deser1 Lighthouse v3: physical lane 2
+					 * (logical lane 3) has P/N swapped on PCB.
+					 * Driver translates to reg 0x08A5 bit 3 = 0x08.
+					 */
+					lane-polarities = <0 0 0 1 0>;
 					remote-endpoint = <&mipi_csi0_ep>;
 				};
 			};
@@ -770,7 +777,7 @@
 			reg = <0>;
 			mipi_csi0_ep: endpoint {
 				remote-endpoint = <&max96724_csi_0_out>;
-				data-lanes = <1 2>;
+				data-lanes = <1 2 3 4>;
 				clock-lanes = <0>;
 			};
 		};
