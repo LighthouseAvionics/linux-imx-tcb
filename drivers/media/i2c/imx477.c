@@ -943,21 +943,13 @@ static const struct imx477_mode supported_modes[] = {
 		.regs = mode_2028x1520_regs,
 	},
 },
-{
-	.width = 2028,
-	.height = 1520,
-	.hblank = 2972,        /* LLP - width = 5000 - 2028 */
-	.vblank = 3280,        /* FLL - height = 4800 - 1520 */
-	.vblank_min = 20,
-	.vblank_max = 64015,   /* 65535 - 1520 */
-	.pclk = 480000000,
-	.link_freq_idx = 0,
-	.code = MEDIA_BUS_FMT_SRGGB12_1X12,
-	.reg_list = {
-		.num_of_regs = ARRAY_SIZE(mode_2028x1520_12bit_regs),
-		.regs = mode_2028x1520_12bit_regs,
-	},
-},
+/*
+ * 12-bit mode (mode_2028x1520_12bit_regs) is not exposed because it is
+ * unvalidated on this GMSL board — libcamera would otherwise prefer it
+ * over 10-bit (higher bit-depth preference) and the downstream pipeline
+ * would be misconfigured for 12-bit data the sensor isn't producing.
+ * Re-enable when the 12-bit mode register table is verified.
+ */
 };
 
 /**
@@ -1854,6 +1846,44 @@ done_endpoint_free:
 	return ret;
 }
 
+/*
+ * IMX477 pixel array geometry: 4072x3046 total, 4056x3040 active area.
+ * The current mode (2028x1520) uses 2x2 binning across the full active area,
+ * so the analogue crop covers the full active area regardless of mode.
+ */
+#define IMX477_NATIVE_WIDTH		4072U
+#define IMX477_NATIVE_HEIGHT		3046U
+#define IMX477_ACTIVE_LEFT		8U
+#define IMX477_ACTIVE_TOP		16U
+#define IMX477_ACTIVE_WIDTH		4056U
+#define IMX477_ACTIVE_HEIGHT		3040U
+
+static int imx477_get_selection(struct v4l2_subdev *sd,
+				struct v4l2_subdev_state *sd_state,
+				struct v4l2_subdev_selection *sel)
+{
+	if (sel->pad != 0)
+		return -EINVAL;
+
+	switch (sel->target) {
+	case V4L2_SEL_TGT_NATIVE_SIZE:
+		sel->r.left = 0;
+		sel->r.top = 0;
+		sel->r.width = IMX477_NATIVE_WIDTH;
+		sel->r.height = IMX477_NATIVE_HEIGHT;
+		return 0;
+	case V4L2_SEL_TGT_CROP_BOUNDS:
+	case V4L2_SEL_TGT_CROP_DEFAULT:
+	case V4L2_SEL_TGT_CROP:
+		sel->r.left = IMX477_ACTIVE_LEFT;
+		sel->r.top = IMX477_ACTIVE_TOP;
+		sel->r.width = IMX477_ACTIVE_WIDTH;
+		sel->r.height = IMX477_ACTIVE_HEIGHT;
+		return 0;
+	}
+	return -EINVAL;
+}
+
 /* V4l2 subdevice ops */
 static const struct v4l2_subdev_video_ops imx477_video_ops = {
 	.s_stream = imx477_set_stream,
@@ -1864,6 +1894,7 @@ static const struct v4l2_subdev_pad_ops imx477_pad_ops = {
 	.enum_frame_size = imx477_enum_frame_size,
 	.get_fmt = imx477_get_pad_format,
 	.set_fmt = imx477_set_pad_format,
+	.get_selection = imx477_get_selection,
 	.get_frame_desc = imx477_get_frame_desc,
 };
 

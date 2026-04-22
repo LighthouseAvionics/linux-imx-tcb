@@ -125,6 +125,29 @@
 };
 
 &combo_rx {
+	status = "okay";
+};
+
+/*
+ * Combo PHY on iMX95 shares low-level test-control registers with the DSI
+ * PHY block. The dphy-rx driver writes DSI_DPHY_TEST_CTRL0 during power-on
+ * (phy-fsl-imx9-dphy-rx.c:338) so mipi_dsi_intf must be enabled for combo_rx
+ * to initialize correctly on the RX side. Mirrors the NXP reference
+ * imx95-19x19-evk-os08a20-combo.dtso pattern.
+ */
+&mipi_dsi_intf {
+	status = "okay";
+};
+
+&display_stream_csr {
+	status = "disabled";
+};
+
+&display_master_csr {
+	status = "disabled";
+};
+
+&mipi_tx_phy_csr {
 	status = "disabled";
 };
 
@@ -154,28 +177,28 @@
 };
 
 &csi_pixel_formatter_1 {
-	status = "disabled";
+	status = "okay";
 
-	// ports {
-	// 	#address-cells = <1>;
-	// 	#size-cells = <0>;
+	ports {
+		#address-cells = <1>;
+		#size-cells = <0>;
 
-	// 	port@0 {
-	// 		reg = <0>;
+		port@0 {
+			reg = <0>;
 
-	// 		formatter_1_in: endpoint {
-	// 			remote-endpoint = <&mipi_csi1_out>;
-	// 		};
-	// 	};
+			formatter_1_in: endpoint {
+				remote-endpoint = <&mipi_csi1_out>;
+			};
+		};
 
-	// 	port@1 {
-	// 		reg = <1>;
+		port@1 {
+			reg = <1>;
 
-	// 		formatter_1_out: endpoint {
-	// 			remote-endpoint = <&isi_in_3>;
-	// 		};
-	// 	};
-	// };
+			formatter_1_out: endpoint {
+				remote-endpoint = <&isi_in_3>;
+			};
+		};
+	};
 };
 
 &displaymix_irqsteer {
@@ -239,7 +262,6 @@
 			};
 		};
 
-		/*
 		port@3 {
 			reg = <3>;
 
@@ -247,7 +269,6 @@
 				remote-endpoint = <&formatter_1_out>;
 			};
 		};
-		*/
 	};
 };
 
@@ -279,6 +300,353 @@
 	};
 };
 
+
+/*
+ * Lighthouse v3 Deser2: second MAX96724 on lpi2c3 (Linux /dev/i2c-2). MIPI
+ * output goes to CSI1 via combo_rx. All 4 data lanes + clock have their P/N
+ * swapped on this board revision (lane-polarities = <1 1 1 1 1>).
+ *
+ * The max96724 driver tolerates chip absence: if the deserializer IC is not
+ * populated / unresponsive on i2c, probe registers an offline stub subdev
+ * so the ISI async notifier still completes and the rest of the media graph
+ * (Deser1 + its cameras) is unaffected. Individual GMSL link-lock is also
+ * handled per-link so missing cameras on present deserializers don't take
+ * down the other cameras on the same deserializer.
+ */
+&lpi2c3 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+	clock-frequency = <400000>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_lpi2c3>;
+	status = "okay";
+
+	max96724_csi1: max96724@27 {
+		compatible = "maxim,max96724";
+		reg = <0x27>;
+		maxim,gmsl-speed = <3>;
+		status = "okay";
+
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			/* GMSL Link A - Camera 4 */
+			port@0 {
+				reg = <0>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				max96724_csi1_gmsl_a_in: endpoint@0 {
+					reg = <0>;
+					remote-endpoint = <&max96717_4_gmsl_out>;
+				};
+				max96724_csi1_pipe_0_out: endpoint@1 {
+					reg = <1>;
+					remote-endpoint = <&max96724_csi1_csi_in_0>;
+				};
+			};
+
+			/* GMSL Link B - Camera 5 */
+			port@1 {
+				reg = <1>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				max96724_csi1_gmsl_b_in: endpoint@0 {
+					reg = <0>;
+					remote-endpoint = <&max96717_5_gmsl_out>;
+				};
+				max96724_csi1_pipe_1_out: endpoint@1 {
+					reg = <1>;
+					remote-endpoint = <&max96724_csi1_csi_in_1>;
+				};
+			};
+
+			/* GMSL Link C - Camera 6 */
+			port@2 {
+				reg = <2>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				max96724_csi1_gmsl_c_in: endpoint@0 {
+					reg = <0>;
+					remote-endpoint = <&max96717_6_gmsl_out>;
+				};
+				max96724_csi1_pipe_2_out: endpoint@1 {
+					reg = <1>;
+					remote-endpoint = <&max96724_csi1_csi_in_2>;
+				};
+			};
+
+			/* GMSL Link D - Camera 7 */
+			port@3 {
+				reg = <3>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				max96724_csi1_gmsl_d_in: endpoint@0 {
+					reg = <0>;
+					remote-endpoint = <&max96717_7_gmsl_out>;
+				};
+				max96724_csi1_pipe_3_out: endpoint@1 {
+					reg = <1>;
+					remote-endpoint = <&max96724_csi1_csi_in_3>;
+				};
+			};
+
+			/* CSI-2 Output Port -> mipi_csi1 */
+			port@4 {
+				reg = <4>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				max96724_csi1_csi_in_0: endpoint@0 {
+					reg = <0>;
+					remote-endpoint = <&max96724_csi1_pipe_0_out>;
+				};
+				max96724_csi1_csi_in_1: endpoint@1 {
+					reg = <1>;
+					remote-endpoint = <&max96724_csi1_pipe_1_out>;
+				};
+				max96724_csi1_csi_in_2: endpoint@2 {
+					reg = <2>;
+					remote-endpoint = <&max96724_csi1_pipe_2_out>;
+				};
+				max96724_csi1_csi_in_3: endpoint@3 {
+					reg = <3>;
+					remote-endpoint = <&max96724_csi1_pipe_3_out>;
+				};
+				max96724_csi1_csi_out: endpoint@4 {
+					reg = <4>;
+					data-lanes = <1 2 3 4>;
+					/*
+					 * Deser2 Lighthouse v3: all 4 data lanes
+					 * + clock have P/N swapped on PCB.
+					 */
+					lane-polarities = <1 1 1 1 1>;
+					remote-endpoint = <&mipi_csi1_ep>;
+				};
+			};
+		};
+
+		i2c-mux {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			/* GMSL Link A */
+			i2c@0 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				reg = <0>;
+
+				max96717_4: serializer@42 {
+					compatible = "maxim,max96717", "maxim,max96717f";
+					reg = <0x42>;
+					gpio-controller;
+					#gpio-cells = <2>;
+					#clock-cells = <0>;
+
+					ports {
+						#address-cells = <1>;
+						#size-cells = <0>;
+						port@0 {
+							reg = <0>;
+							max96717_4_csi_in: endpoint {
+								data-lanes = <1 2>;
+								remote-endpoint = <&imx477_4_ep>;
+							};
+						};
+						port@1 {
+							reg = <1>;
+							max96717_4_gmsl_out: endpoint {
+								remote-endpoint = <&max96724_csi1_gmsl_a_in>;
+							};
+						};
+					};
+
+					i2c-gate {
+						#address-cells = <1>;
+						#size-cells = <0>;
+						imx477_4: sensor@1a {
+							compatible = "sony,imx477";
+							reg = <0x1a>;
+							clocks = <&max96717_4>;
+							clock-names = "xclk";
+							enable-gpios = <&max96717_4 0 GPIO_ACTIVE_HIGH>;
+							port {
+								imx477_4_ep: endpoint {
+									data-lanes = <1 2>;
+									link-frequencies = /bits/ 64 <600000000>;
+									remote-endpoint = <&max96717_4_csi_in>;
+								};
+							};
+						};
+					};
+				};
+			};
+
+			/* GMSL Link B */
+			i2c@1 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				reg = <1>;
+
+				max96717_5: serializer@42 {
+					compatible = "maxim,max96717", "maxim,max96717f";
+					reg = <0x42>;
+					gpio-controller;
+					#gpio-cells = <2>;
+					#clock-cells = <0>;
+
+					ports {
+						#address-cells = <1>;
+						#size-cells = <0>;
+						port@0 {
+							reg = <0>;
+							max96717_5_csi_in: endpoint {
+								data-lanes = <1 2>;
+								remote-endpoint = <&imx477_5_ep>;
+							};
+						};
+						port@1 {
+							reg = <1>;
+							max96717_5_gmsl_out: endpoint {
+								remote-endpoint = <&max96724_csi1_gmsl_b_in>;
+							};
+						};
+					};
+
+					i2c-gate {
+						#address-cells = <1>;
+						#size-cells = <0>;
+						imx477_5: sensor@1a {
+							compatible = "sony,imx477";
+							reg = <0x1a>;
+							clocks = <&max96717_5>;
+							clock-names = "xclk";
+							enable-gpios = <&max96717_5 0 GPIO_ACTIVE_HIGH>;
+							port {
+								imx477_5_ep: endpoint {
+									data-lanes = <1 2>;
+									link-frequencies = /bits/ 64 <600000000>;
+									remote-endpoint = <&max96717_5_csi_in>;
+								};
+							};
+						};
+					};
+				};
+			};
+
+			/* GMSL Link C */
+			i2c@2 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				reg = <2>;
+
+				max96717_6: serializer@42 {
+					compatible = "maxim,max96717", "maxim,max96717f";
+					reg = <0x42>;
+					gpio-controller;
+					#gpio-cells = <2>;
+					#clock-cells = <0>;
+
+					ports {
+						#address-cells = <1>;
+						#size-cells = <0>;
+						port@0 {
+							reg = <0>;
+							max96717_6_csi_in: endpoint {
+								data-lanes = <1 2>;
+								remote-endpoint = <&imx477_6_ep>;
+							};
+						};
+						port@1 {
+							reg = <1>;
+							max96717_6_gmsl_out: endpoint {
+								remote-endpoint = <&max96724_csi1_gmsl_c_in>;
+							};
+						};
+					};
+
+					i2c-gate {
+						#address-cells = <1>;
+						#size-cells = <0>;
+						imx477_6: sensor@1a {
+							compatible = "sony,imx477";
+							reg = <0x1a>;
+							clocks = <&max96717_6>;
+							clock-names = "xclk";
+							enable-gpios = <&max96717_6 0 GPIO_ACTIVE_HIGH>;
+							port {
+								imx477_6_ep: endpoint {
+									data-lanes = <1 2>;
+									link-frequencies = /bits/ 64 <600000000>;
+									remote-endpoint = <&max96717_6_csi_in>;
+								};
+							};
+						};
+					};
+				};
+			};
+
+			/* GMSL Link D */
+			i2c@3 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				reg = <3>;
+
+				max96717_7: serializer@42 {
+					compatible = "maxim,max96717", "maxim,max96717f";
+					reg = <0x42>;
+					gpio-controller;
+					#gpio-cells = <2>;
+					#clock-cells = <0>;
+
+					ports {
+						#address-cells = <1>;
+						#size-cells = <0>;
+						port@0 {
+							reg = <0>;
+							max96717_7_csi_in: endpoint {
+								data-lanes = <1 2>;
+								remote-endpoint = <&imx477_7_ep>;
+							};
+						};
+						port@1 {
+							reg = <1>;
+							max96717_7_gmsl_out: endpoint {
+								remote-endpoint = <&max96724_csi1_gmsl_d_in>;
+							};
+						};
+					};
+
+					i2c-gate {
+						#address-cells = <1>;
+						#size-cells = <0>;
+						imx477_7: sensor@1a {
+							compatible = "sony,imx477";
+							reg = <0x1a>;
+							clocks = <&max96717_7>;
+							clock-names = "xclk";
+							enable-gpios = <&max96717_7 0 GPIO_ACTIVE_HIGH>;
+							port {
+								imx477_7_ep: endpoint {
+									data-lanes = <1 2>;
+									link-frequencies = /bits/ 64 <600000000>;
+									remote-endpoint = <&max96717_7_csi_in>;
+								};
+							};
+						};
+					};
+				};
+			};
+		};
+	};
+};
 
 &lpi2c4 {
 	#address-cells = <1>;
@@ -792,27 +1160,28 @@
 };
 
 &mipi_csi1 {
-	status = "disabled";
+	status = "okay";
+	virtual-channel;
 
 	ports {
 		#address-cells = <1>;
 		#size-cells = <0>;
 
-		// port@0 {
-		// 	reg = <0>;
-		// 	mipi_csi1_ep: endpoint {
-		// 		remote-endpoint = <&imx477_1_ep>;
-		// 		data-lanes = <1 2>;
-		// 		clock-lanes = <0>;
-		// 	};
-		// };
+		port@0 {
+			reg = <0>;
+			mipi_csi1_ep: endpoint {
+				remote-endpoint = <&max96724_csi1_csi_out>;
+				data-lanes = <1 2 3 4>;
+				clock-lanes = <0>;
+			};
+		};
 
-		// port@1 {
-		// 	reg = <1>;
-		// 	mipi_csi1_out: endpoint {
-		// 		remote-endpoint = <&formatter_1_in>;
-		// 	};
-		// };
+		port@1 {
+			reg = <1>;
+			mipi_csi1_out: endpoint {
+				remote-endpoint = <&formatter_1_in>;
+			};
+		};
 	};
 };
 

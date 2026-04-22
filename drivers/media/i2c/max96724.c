@@ -1341,11 +1341,8 @@ static int max96724_enable_streams(struct v4l2_subdev *sd, struct v4l2_subdev_st
 {
 	struct max96724_priv *priv = container_of(sd, struct max96724_priv, sd);
 	struct device *dev = &priv->client->dev;
-	struct v4l2_subdev *remote_sd;
 	int ret = 0;
-	u32 remote_pad = 0;
-	u64 sink_streams = 0;
-	u64 sources_mask = streams_mask;
+	unsigned int i;
 
 
 	mutex_lock(&priv->lock);
@@ -1364,27 +1361,54 @@ static int max96724_enable_streams(struct v4l2_subdev *sd, struct v4l2_subdev_st
 			goto unlock;
 	}
 
-	while (true) {
-		int pos = ffs(sources_mask) - 1;
+	/*
+	 * Walk the active routing table. For each route where
+	 * source_pad == src_pad and the source_stream is in streams_mask,
+	 * enable the corresponding stream on the sink pad's remote subdev.
+	 * Previously the loop treated ffs(streams_mask)-1 as both the stream
+	 * position AND the sink pad index — that assumption only holds when
+	 * the camera is on GMSL Link A (sink pad 0); for any other link the
+	 * lookup returned EPIPE "no remote pad found for sink pad".
+	 */
+	for (i = 0; i < state->routing.num_routes; i++) {
+		struct v4l2_subdev_route *route = &state->routing.routes[i];
+		struct media_pad *pad;
+		struct v4l2_subdev *remote_sd;
 
-		if (pos == -1)
-			break;
+		if (!(route->flags & V4L2_SUBDEV_ROUTE_FL_ACTIVE))
+			continue;
+		if (route->source_pad != src_pad)
+			continue;
+		if (!(streams_mask & BIT(route->source_stream)))
+			continue;
 
-		remote_sd = max96724_xlate_streams(priv, state, src_pad, BIT(pos), pos,
-						   &sink_streams, &remote_pad);
-		if (IS_ERR(remote_sd)) {
-			ret = PTR_ERR(remote_sd);
+		if (route->sink_pad >= MAX96724_N_SINKS) {
+			dev_err(dev, "route sink_pad %u out of range\n", route->sink_pad);
+			ret = -EINVAL;
 			goto unlock;
 		}
 
-		ret = v4l2_subdev_enable_streams(remote_sd, remote_pad, 0x1);
+		pad = media_pad_remote_pad_first(&priv->pads[route->sink_pad]);
+		if (!pad) {
+			dev_err(dev, "no remote pad on sink pad %u\n", route->sink_pad);
+			ret = -EPIPE;
+			goto unlock;
+		}
+		remote_sd = media_entity_to_v4l2_subdev(pad->entity);
+		if (!remote_sd) {
+			dev_err(dev, "no v4l2 subdev on sink pad %u remote\n",
+				route->sink_pad);
+			ret = -EPIPE;
+			goto unlock;
+		}
+
+		ret = v4l2_subdev_enable_streams(remote_sd, pad->index,
+						 BIT(route->sink_stream));
 		if (ret) {
-			dev_err(dev, "failed to enable streams 0x%llx on '%s':%u: %d\n",
-				sink_streams, remote_sd->name, remote_pad, ret);
+			dev_err(dev, "failed to enable stream on '%s':%u: %d\n",
+				remote_sd->name, pad->index, ret);
 			goto unlock;
 		}
-
-		sources_mask &= ~BIT(pos);
 	}
 
 	priv->enable_count++;
@@ -1400,40 +1424,55 @@ static int max96724_disable_streams(struct v4l2_subdev *sd, struct v4l2_subdev_s
 {
 	struct max96724_priv *priv = container_of(sd, struct max96724_priv, sd);
 	struct device *dev = &priv->client->dev;
-	struct v4l2_subdev *remote_sd;
-	u64 sink_streams = 0;
-	u64 sources_mask = streams_mask;
-	u32 remote_pad = 0;
 	int ret = 0;
+	unsigned int i;
 
 
 	mutex_lock(&priv->lock);
 
 	priv->enable_count--;
 
-	/* disable cameras*/
-	while (true) {
-		int pos = ffs(sources_mask) - 1;
+	/* Mirror of enable_streams: walk the routing table rather than
+	 * assuming ffs(mask)-1 == sink_pad. */
+	for (i = 0; i < state->routing.num_routes; i++) {
+		struct v4l2_subdev_route *route = &state->routing.routes[i];
+		struct media_pad *pad;
+		struct v4l2_subdev *remote_sd;
 
-		if (pos == -1)
-			break;
+		if (!(route->flags & V4L2_SUBDEV_ROUTE_FL_ACTIVE))
+			continue;
+		if (route->source_pad != src_pad)
+			continue;
+		if (!(streams_mask & BIT(route->source_stream)))
+			continue;
 
-		remote_sd = max96724_xlate_streams(priv, state, src_pad, BIT(pos), pos,
-						   &sink_streams, &remote_pad);
-		if (IS_ERR(remote_sd)) {
-			ret = PTR_ERR(remote_sd);
+		if (route->sink_pad >= MAX96724_N_SINKS) {
+			dev_err(dev, "route sink_pad %u out of range\n", route->sink_pad);
+			ret = -EINVAL;
 			goto unlock;
 		}
 
-		ret = v4l2_subdev_disable_streams(remote_sd, remote_pad, 0x1);
+		pad = media_pad_remote_pad_first(&priv->pads[route->sink_pad]);
+		if (!pad) {
+			dev_err(dev, "no remote pad on sink pad %u\n", route->sink_pad);
+			ret = -EPIPE;
+			goto unlock;
+		}
+		remote_sd = media_entity_to_v4l2_subdev(pad->entity);
+		if (!remote_sd) {
+			dev_err(dev, "no v4l2 subdev on sink pad %u remote\n",
+				route->sink_pad);
+			ret = -EPIPE;
+			goto unlock;
+		}
+
+		ret = v4l2_subdev_disable_streams(remote_sd, pad->index,
+						  BIT(route->sink_stream));
 		if (ret) {
-			dev_err(dev,
-				"failed to disable streams 0x%llx on '%s':%u: %d\n",
-				sink_streams, remote_sd->name, remote_pad, ret);
+			dev_err(dev, "failed to disable stream on '%s':%u: %d\n",
+				remote_sd->name, pad->index, ret);
 			goto unlock;
 		}
-
-		sources_mask &= ~BIT(pos);
 	}
 
 	if (!priv->enable_count) {
@@ -1636,6 +1675,7 @@ static int max96724_v4l2_notifier_register(struct max96724_priv *priv)
 	int i, ret;
 	struct device *dev = &priv->client->dev;
 	struct max96724_source *source = NULL;
+	unsigned int added = 0;
 
 
 	if (!priv->nsources) {
@@ -1644,12 +1684,30 @@ static int max96724_v4l2_notifier_register(struct max96724_priv *priv)
 
 	v4l2_async_subdev_nf_init(&priv->notifier, &priv->sd);
 
+	/*
+	 * Only add async subdev entries for GMSL links that actually locked at
+	 * boot (priv->gmsl_link_mask was rewritten by max96724_check_gmsl_links()
+	 * to contain the locked set). A missing / unlocked camera would
+	 * otherwise leave the async notifier waiting forever for a subdev that
+	 * can never appear, which would block the deserializer's own subdev
+	 * completion and, transitively, the entire ISI media device. With this
+	 * skip, a single missing camera degrades gracefully — its entry is
+	 * simply absent from libcamera while the working cameras still
+	 * enumerate.
+	 */
 	for (i = 0; i < MAX96724_N_SINKS; i++) {
 		source = &priv->sources[i];
 		struct max96724_asc *asc;
 
 		if (!source->fwnode)
 			continue;
+
+		if (!(priv->gmsl_link_mask & BIT(i))) {
+			dev_warn(dev,
+				 "GMSL link %c: no lock at boot, skipping async subdev registration\n",
+				 'A' + i);
+			continue;
+		}
 
 		asc = v4l2_async_nf_add_fwnode(&priv->notifier, source->fwnode,
 					       struct max96724_asc);
@@ -1660,6 +1718,18 @@ static int max96724_v4l2_notifier_register(struct max96724_priv *priv)
 		}
 
 		asc->source = source;
+		added++;
+	}
+
+	/*
+	 * If no links locked, nothing to wait for. Clean up the notifier and
+	 * skip registration so the deserializer's subdev still completes and
+	 * downstream media-device registration can proceed.
+	 */
+	if (!added) {
+		dev_warn(dev, "No GMSL links locked; skipping async notifier registration\n");
+		v4l2_async_nf_cleanup(&priv->notifier);
+		return 0;
 	}
 
 	priv->notifier.ops = &max96724_notify_ops;
@@ -1680,6 +1750,13 @@ static void max96724_v4l2_notifier_unregister(struct max96724_priv *priv)
 	if (!priv->nsources) {
 		return;
 	}
+
+	/*
+	 * If notifier_register() skipped registration because no links were
+	 * locked, unregister is a no-op (ops pointer is NULL in that case).
+	 */
+	if (!priv->notifier.ops)
+		return;
 
 	v4l2_async_nf_unregister(&priv->notifier);
 	v4l2_async_nf_cleanup(&priv->notifier);
@@ -1768,6 +1845,7 @@ static int max96724_probe(struct i2c_client *client)
 	struct device *dev = &client->dev;
 	int ret;
 	int chip_id;
+	bool chip_present;
 
 
 	priv = devm_kzalloc(dev, sizeof(*priv), GFP_KERNEL);
@@ -1806,15 +1884,24 @@ static int max96724_probe(struct i2c_client *client)
 	/* power-up completes in approx 2ms, according to specifications */
 	usleep_range(2000, 2500);
 
+	/*
+	 * Probe for chip presence. If the deserializer is not physically
+	 * installed or is not responding on i2c, we still register a minimal
+	 * v4l2_subdev stub so downstream consumers (ISI async notifier)
+	 * complete cleanly and any other deserializer in the system keeps
+	 * working. Only skip the i2c-touching initialization in that case.
+	 */
 	ret = regmap_read(priv->rmap, MAX96724_DEV_REG13, &chip_id);
-	if (ret) {
-		dev_err(dev, "Failed to read device id: %d\n", ret);
-		return ret;
-	}
-
-	if (chip_id != MAX96724_DEV_ID) {
-		dev_err(dev, "Wrong Maxim serializer detected: id 0x%x\n", chip_id);
-		return -ENODEV;
+	chip_present = (ret == 0) && (chip_id == MAX96724_DEV_ID);
+	if (!chip_present) {
+		if (ret)
+			dev_warn(dev,
+				 "MAX96724 not responding on i2c (%d); registering offline stub\n",
+				 ret);
+		else
+			dev_warn(dev,
+				 "Unexpected chip id 0x%02x; registering offline stub\n",
+				 chip_id);
 	}
 
 	ret = max96724_i2c_parse_dt(priv);
@@ -1837,10 +1924,14 @@ static int max96724_probe(struct i2c_client *client)
 		}
 	}
 
-
-	ret = max96724_chip_init(priv);
-	if (ret) {
-		return -ENODEV;
+	if (chip_present) {
+		ret = max96724_chip_init(priv);
+		if (ret) {
+			return -ENODEV;
+		}
+	} else {
+		/* Chip absent: no GMSL links can lock. */
+		priv->gmsl_link_mask = 0;
 	}
 
 	ret = max96724_parse_dt(priv);
@@ -1848,9 +1939,11 @@ static int max96724_probe(struct i2c_client *client)
 		return ret;
 	}
 
-	ret = max96724_dphy_config(priv);
-	if (ret) {
-		return ret;
+	if (chip_present) {
+		ret = max96724_dphy_config(priv);
+		if (ret) {
+			return ret;
+		}
 	}
 
 	ret = max96724_v4l2_init(priv);
@@ -1858,17 +1951,34 @@ static int max96724_probe(struct i2c_client *client)
 		return ret;
 	}
 
-	ret = max96724_i2c_init(priv);
-	return ret;
+	/*
+	 * The i2c-mux requires a live chip to forward transactions over GMSL.
+	 * Skip it entirely in offline stub mode so we don't advertise non-
+	 * functional child i2c buses. Serializer / sensor drivers won't
+	 * even attempt to probe without those child buses.
+	 */
+	if (chip_present) {
+		ret = max96724_i2c_init(priv);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
 }
 
 static void max96724_remove(struct i2c_client *client)
 {
-	struct v4l2_subdev *subdev = i2c_get_clientdata(client);
-	struct max96724_priv *priv = container_of(subdev, struct max96724_priv, sd);
+	struct max96724_priv *priv = i2c_get_clientdata(client);
 
 
-	i2c_mux_del_adapters(priv->mux);
+	/*
+	 * i2c-mux is only created in max96724_i2c_init() which is skipped in
+	 * offline-stub mode. priv->mux is NULL in that case and must not be
+	 * freed.
+	 */
+	if (priv->mux)
+		i2c_mux_del_adapters(priv->mux);
+
 	max96724_v4l2_deinit(priv);
 	mutex_destroy(&priv->lock);
 

@@ -393,6 +393,7 @@ void mxc_isi_channel_config(struct mxc_isi_pipe *pipe,
 {
 	bool csc_bypass;
 	bool scaler_bypass;
+	bool crop_bypass;
 
 	dev_dbg(pipe->isi->dev, "mxc_isi_channel_config: ENTER input=%d in_size=%ux%u\n",
 		 input, in_size->width, in_size->height);
@@ -411,14 +412,24 @@ void mxc_isi_channel_config(struct mxc_isi_pipe *pipe,
 				    &scaler_bypass);
 	mxc_isi_channel_set_crop(pipe, scale, crop);
 
+	/* Crop is a no-op when post-scale dims equal crop dims. */
+	crop_bypass = (scale->width == crop->width &&
+		       scale->height == crop->height);
+
 	/* CSC */
 	mxc_isi_channel_set_csc(pipe, in_encoding, out_encoding, &csc_bypass);
 
 	/* Output buffer management */
 	mxc_isi_channel_set_panic_threshold(pipe);
 
-	/* Channel control */
-	mxc_isi_channel_set_control(pipe, input, csc_bypass && scaler_bypass);
+	/*
+	 * Channel control — enable the full-channel bypass only when the
+	 * channel has absolutely nothing to do (no CSC, no scaling, no crop).
+	 * If we bypass while crop is active, CHNL_CTRL_CHNL_BYPASS overrides
+	 * the crop engine and data streams through uncropped.
+	 */
+	mxc_isi_channel_set_control(pipe, input,
+				    csc_bypass && scaler_bypass && crop_bypass);
 
 	dev_dbg(pipe->isi->dev, "mxc_isi_channel_config: EXIT\n");
 }
