@@ -1780,9 +1780,17 @@ static irqreturn_t dwc_csi_irq_handler(int irq, void *priv)
 	/* Read sub-registers (read-to-clear) to identify specific errors */
 	if (status & CSI2RX_INT_ST_MAIN_FATAL_ERR_PHY) {
 		u32 dphy_fatal = dwc_csi_read(csidev, CSI2RX_INT_ST_DPHY_FATAL);
-		dev_info(csidev->dev, "DPHY_FATAL=0x%02x [%s%s]\n", dphy_fatal,
+		/*
+		 * Print raw value (%08x) + per-lane decode for all 4 data lanes.
+		 * The IP has 4 SoT bits even though the existing #defines only
+		 * named LANE0/LANE1 — useful for isolating a bad physical lane
+		 * on a suspect MIPI connector.
+		 */
+		dev_info(csidev->dev, "DPHY_FATAL=0x%08x [%s%s%s%s]\n", dphy_fatal,
 			 (dphy_fatal & BIT(0)) ? "SOT_ERR_L0 " : "",
-			 (dphy_fatal & BIT(1)) ? "SOT_ERR_L1 " : "");
+			 (dphy_fatal & BIT(1)) ? "SOT_ERR_L1 " : "",
+			 (dphy_fatal & BIT(2)) ? "SOT_ERR_L2 " : "",
+			 (dphy_fatal & BIT(3)) ? "SOT_ERR_L3 " : "");
 	}
 	if (status & CSI2RX_INT_ST_MAIN_FATAL_ERR_PKT) {
 		u32 pkt_fatal = dwc_csi_read(csidev, CSI2RX_INT_ST_PKT_FATAL);
@@ -1792,11 +1800,21 @@ static irqreturn_t dwc_csi_irq_handler(int irq, void *priv)
 	}
 	if (status & CSI2RX_INT_ST_MAIN_ERR_PHY) {
 		u32 dphy_err = dwc_csi_read(csidev, CSI2RX_INT_ST_DPHY);
-		dev_info(csidev->dev, "DPHY_ERR=0x%05x [%s%s%s%s]\n", dphy_err,
-			 (dphy_err & BIT(0)) ? "SOT_L0 " : "",
-			 (dphy_err & BIT(1)) ? "SOT_L1 " : "",
-			 (dphy_err & BIT(16)) ? "ESC_L0 " : "",
-			 (dphy_err & BIT(17)) ? "ESC_L1 " : "");
+		/*
+		 * Same rationale as DPHY_FATAL above — decode all 4 data lanes
+		 * for SoT and ESC errors so we can pinpoint which physical
+		 * lane is flaky. SoT at bits [3:0], ESC at bits [19:16].
+		 */
+		dev_info(csidev->dev,
+			 "DPHY_ERR=0x%08x [%s%s%s%s%s%s%s%s]\n", dphy_err,
+			 (dphy_err & BIT(0))  ? "SOT_L0 "  : "",
+			 (dphy_err & BIT(1))  ? "SOT_L1 "  : "",
+			 (dphy_err & BIT(2))  ? "SOT_L2 "  : "",
+			 (dphy_err & BIT(3))  ? "SOT_L3 "  : "",
+			 (dphy_err & BIT(16)) ? "ESC_L0 "  : "",
+			 (dphy_err & BIT(17)) ? "ESC_L1 "  : "",
+			 (dphy_err & BIT(18)) ? "ESC_L2 "  : "",
+			 (dphy_err & BIT(19)) ? "ESC_L3 "  : "");
 	}
 	if (status & CSI2RX_INT_ST_MAIN_FATAL_ERR_IPI) {
 		u32 ipi_fatal = dwc_csi_read(csidev, CSI2RX_INT_ST_IPI_FATAL);

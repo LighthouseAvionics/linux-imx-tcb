@@ -21,6 +21,12 @@
 
 /* Streaming Mode */
 #define IMX477_REG_MODE_SELECT	0x0100
+/*
+ * CSI Channel ID — the 2-bit MIPI virtual channel the sensor stamps
+ * onto outgoing packets. POR default 0. Set per-instance from DT for
+ * multi-camera GMSL2 tunnel-mode setups.
+ */
+#define IMX477_REG_CSI_CHANNEL_ID	0x0110
 #define IMX477_MODE_STANDBY	0x00
 #define IMX477_MODE_STREAMING	0x01
 
@@ -161,6 +167,17 @@ struct imx477 {
 	struct mutex mutex;
 	struct dentry *debugfs_dir;
 	u16 debugfs_reg_addr;
+	/*
+	 * CSI-2 virtual channel this sensor stamps onto its outgoing
+	 * MIPI packets (register 0x0110, "CSI CH ID"). Read from DT
+	 * property `csi-vc-id`; defaults to 0. Required for multi-camera
+	 * GMSL2 setups in tunnel mode where the deserializer cannot
+	 * remap VCs (per Maxim documentation: "Tunnel mode does not
+	 * support overriding of the virtual channel"). Each sensor on
+	 * the same downstream CSI receiver must use a unique 2-bit VC
+	 * (0-3) so the receiver can demultiplex per-camera streams.
+	 */
+	u8 csi_vc_id;
 };
 
 static const s64 link_freq[] = {
@@ -937,7 +954,15 @@ static const struct imx477_mode supported_modes[] = {
 	.vblank_max = 64015,   /* 65535 - 1520 */
 	.pclk = 480000000,     /* VTPXCK × 4 = 120 × 4 = 480 Mpps */
 	.link_freq_idx = 0,
-	.code = MEDIA_BUS_FMT_SRGGB10_1X10,
+	/*
+	 * IMX477 native readout CFA is BGGR. Report it as-is; downstream
+	 * tunings/debayer are configured for BGGR to match. (Applying
+	 * IMAGE_ORIENTATION H+V flip in the init table would invert this
+	 * to RGGB and is how most IMX477 users hide the native CFA, but
+	 * we deliberately don't — this driver reports what the sensor
+	 * actually emits.)
+	 */
+	.code = MEDIA_BUS_FMT_SBGGR10_1X10,
 	.reg_list = {
 		.num_of_regs = ARRAY_SIZE(mode_2028x1520_regs),
 		.regs = mode_2028x1520_regs,
@@ -1459,7 +1484,7 @@ static int imx477_get_frame_desc(struct v4l2_subdev *sd, unsigned int pad,
 		fd->entry[0].length = mode->width * mode->height * 10 / 8;
 		fd->entry[0].bus.csi2.dt = 0x2b; /* RAW10 */
 	}
-	fd->entry[0].bus.csi2.vc = 0;
+	fd->entry[0].bus.csi2.vc = imx477->csi_vc_id;
 
 	dev_dbg(imx477->dev, "imx477_get_frame_desc: EXIT ret=0\n");
 	return 0;
@@ -1528,6 +1553,24 @@ static int imx477_start_streaming(struct imx477 *imx477)
 				reg_list->num_of_regs);
 	if (ret) {
 		dev_err(imx477->dev, "fail to write initial registers\n");
+		dev_dbg(imx477->dev, "imx477_start_streaming: EXIT ret=%d\n", ret);
+		return ret;
+	}
+
+	/*
+	 * Stamp the per-instance CSI virtual channel onto outgoing MIPI
+	 * packets via reg 0x0110 ("CSI CH ID"). Done after mode-table
+	 * writes so it isn't reset by subsequent register batches. The
+	 * value comes from DT `csi-vc-id` (default 0). In tunnel-mode
+	 * GMSL2 deployments the serializer/deserializer chain preserves
+	 * VC end-to-end, so this is the authoritative place to assign
+	 * per-camera VCs.
+	 */
+	dev_dbg(imx477->dev, "Setting CSI VC ID = %u\n", imx477->csi_vc_id);
+	ret = imx477_write_reg(imx477, IMX477_REG_CSI_CHANNEL_ID, 1,
+			       imx477->csi_vc_id);
+	if (ret) {
+		dev_err(imx477->dev, "fail to set CSI VC ID\n");
 		dev_dbg(imx477->dev, "imx477_start_streaming: EXIT ret=%d\n", ret);
 		return ret;
 	}
@@ -1841,6 +1884,25 @@ static int imx477_parse_hw_config(struct imx477 *imx477)
 
 done_endpoint_free:
 	v4l2_fwnode_endpoint_free(&bus_cfg);
+
+	/*
+	 * Optional: override the CSI-2 virtual channel for this sensor
+	 * via DT property `csi-vc-id`. Used for multi-camera GMSL2
+	 * setups where the serializer/deserializer chain runs in tunnel
+	 * mode and cannot remap VCs — the source has to set them.
+	 */
+	if (!ret) {
+		u32 vc = 0;
+
+		fwnode_property_read_u32(fwnode, "csi-vc-id", &vc);
+		if (vc > 3) {
+			dev_err(imx477->dev,
+				"csi-vc-id %u out of range (0-3)\n", vc);
+			ret = -EINVAL;
+		} else {
+			imx477->csi_vc_id = (u8)vc;
+		}
+	}
 
 	dev_dbg(imx477->dev, "imx477_parse_hw_config: EXIT ret=%d\n", ret);
 	return ret;

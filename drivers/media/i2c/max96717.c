@@ -89,6 +89,20 @@
 #define MAX96717_START_PORT_B BIT(5)
 #define MAX96717_FRONTTOP_9   CCI_REG8(0x311)
 #define MAX96717_START_PORTBZ BIT(6)
+/*
+ * Pipe-Z software VC override. SOFT_VCZ_EN turns on VC override; the
+ * 2-bit value at SOFT_VCZ_MASK is then stamped onto every outgoing MIPI
+ * packet for pipe Z, replacing whatever VC the upstream sensor sent.
+ * This is required for multi-camera GMSL setups in tunnel mode: the
+ * MAX96724 deserializer's VC mapper is bypassed by tunnel mode, so each
+ * MAX96717 must emit a unique VC on the wire so the iMX95 CSI receiver
+ * can demultiplex per-camera streams to per-camera ISI pipes.
+ */
+#define MAX96717_FRONTTOP_22  CCI_REG8(0x31e)
+#define MAX96717_SOFT_VCZ_EN  BIT(6)
+#define MAX96717_FRONTTOP_24  CCI_REG8(0x320)
+#define MAX96717_SOFT_VCZ_MASK  GENMASK(5, 4)
+#define MAX96717_SOFT_VCZ_SHIFT 4
 
 /* CMU — internal 1.1V regulator enable (required per chip spec) */
 #define MAX96717_CMU_CMU2       CCI_REG8(0x302)
@@ -151,6 +165,14 @@ struct max96717_priv {
 	enum max96717_vpg_mode            pattern;
 	struct dentry                     *debugfs_dir;
 	u16                               debugfs_reg_addr;
+	/*
+	 * MIPI virtual channel (0-3) this serializer stamps onto its
+	 * tunnel-mode output. Read from DT property `maxim,vc-id`;
+	 * defaults to 0 when absent (single-camera-per-deser legacy
+	 * behavior). Must be unique among serializers feeding the same
+	 * MAX96724 to allow downstream VC-based demux.
+	 */
+	u8                                vc_id;
 };
 
 static inline struct max96717_priv *sd_to_max96717(struct v4l2_subdev *sd)
@@ -195,6 +217,22 @@ static inline int max96717_start_csi(struct max96717_priv *priv, bool start)
 	 */
 	cci_write(priv->regmap, MAX96717_FRONTTOP_9,
 		  start ? MAX96717_START_PORTBZ : 0, &ret);
+	/*
+	 * Program the software VC override on every start so the value
+	 * survives a chip reset between streaming sessions. Stamps each
+	 * outgoing tunnel-mode MIPI packet with priv->vc_id (set from
+	 * DT). Without this, all serializers emit VC=0 and the iMX95
+	 * CSI receiver can't demux multi-camera streams.
+	 */
+	if (start) {
+		cci_update_bits(priv->regmap, MAX96717_FRONTTOP_22,
+				MAX96717_SOFT_VCZ_EN,
+				MAX96717_SOFT_VCZ_EN, &ret);
+		cci_update_bits(priv->regmap, MAX96717_FRONTTOP_24,
+				MAX96717_SOFT_VCZ_MASK,
+				(priv->vc_id << MAX96717_SOFT_VCZ_SHIFT) &
+				MAX96717_SOFT_VCZ_MASK, &ret);
+	}
 	/*
 	 * REG2[6] VID_TX_EN_Z gates video transmission onto GMSL. Default
 	 * is 0x03 (TX disabled) on boards where bootstrap straps don't set
@@ -650,12 +688,40 @@ static int max96717_disable_streams(struct v4l2_subdev *sd,
 	return 0;
 }
 
+/*
+ * Forward CSI-2 frame descriptors from the upstream sensor. The serializer
+ * is transparent to pixel-data formatting (it only repacks for the GMSL
+ * link), so the descriptor — including pixelcode, length, virtual channel
+ * and data type — is whatever the sensor reports for the single stream we
+ * carry from sink (pad 0) to source (pad 1).
+ *
+ * Without this, the iMX95 ISI's mxc_isi_pipe_enable() walks upstream looking
+ * for VC info, can't find a frame_desc op on max96717, and aborts the pipe
+ * with -EPIPE — making multi-camera streaming impossible because the ISI
+ * can't tell which MIPI VC to bind each pipe to.
+ */
+static int max96717_get_frame_desc(struct v4l2_subdev *sd, unsigned int pad,
+				   struct v4l2_mbus_frame_desc *fd)
+{
+	struct max96717_priv *priv = sd_to_max96717(sd);
+
+	if (pad != MAX96717_PAD_SOURCE)
+		return -EINVAL;
+
+	if (!priv->source_sd)
+		return -EPIPE;
+
+	return v4l2_subdev_call(priv->source_sd, pad, get_frame_desc,
+				priv->source_sd_pad, fd);
+}
+
 static const struct v4l2_subdev_pad_ops max96717_pad_ops = {
 	.enable_streams = max96717_enable_streams,
 	.disable_streams = max96717_disable_streams,
 	.set_routing = max96717_set_routing,
 	.get_fmt = v4l2_subdev_get_fmt,
 	.set_fmt = max96717_set_fmt,
+	.get_frame_desc = max96717_get_frame_desc,
 };
 
 static const struct v4l2_subdev_core_ops max96717_subdev_core_ops = {
@@ -1146,6 +1212,24 @@ static int max96717_parse_dt(struct max96717_priv *priv)
 	}
 
 	priv->mipi_csi2 = vep.bus.mipi_csi2;
+
+	/*
+	 * Per-instance MIPI virtual channel for tunnel-mode output. Each
+	 * serializer feeding the same MAX96724 must have a distinct value
+	 * (0-3) so the downstream CSI receiver can demux. Absent property
+	 * keeps VC=0 — matches the historical single-camera default.
+	 */
+	{
+		u32 vc_id = 0;
+
+		of_property_read_u32(dev_of_node(dev), "maxim,vc-id", &vc_id);
+		if (vc_id > 3) {
+			return dev_err_probe(dev, -EINVAL,
+					     "maxim,vc-id %u out of range (0-3)\n",
+					     vc_id);
+		}
+		priv->vc_id = (u8)vc_id;
+	}
 
 	return 0;
 }

@@ -445,6 +445,8 @@
 
 				max96717_4: serializer@42 {
 					compatible = "maxim,max96717", "maxim,max96717f";
+					/* CSI1 link A — VC 0 on this MIPI output */
+					maxim,vc-id = <0>;
 					reg = <0x42>;
 					gpio-controller;
 					#gpio-cells = <2>;
@@ -474,6 +476,8 @@
 						imx477_4: sensor@1a {
 							compatible = "sony,imx477";
 							reg = <0x1a>;
+							/* CSI1 link A - VC 0 on this MIPI receiver */
+							csi-vc-id = <0>;
 							clocks = <&max96717_4>;
 							clock-names = "xclk";
 							enable-gpios = <&max96717_4 0 GPIO_ACTIVE_HIGH>;
@@ -497,6 +501,8 @@
 
 				max96717_5: serializer@42 {
 					compatible = "maxim,max96717", "maxim,max96717f";
+					/* CSI1 link B — VC 1 on this MIPI output */
+					maxim,vc-id = <1>;
 					reg = <0x42>;
 					gpio-controller;
 					#gpio-cells = <2>;
@@ -526,6 +532,8 @@
 						imx477_5: sensor@1a {
 							compatible = "sony,imx477";
 							reg = <0x1a>;
+							/* CSI1 link B - VC 1 on this MIPI receiver */
+							csi-vc-id = <1>;
 							clocks = <&max96717_5>;
 							clock-names = "xclk";
 							enable-gpios = <&max96717_5 0 GPIO_ACTIVE_HIGH>;
@@ -549,6 +557,8 @@
 
 				max96717_6: serializer@42 {
 					compatible = "maxim,max96717", "maxim,max96717f";
+					/* CSI1 link C — VC 2 on this MIPI output */
+					maxim,vc-id = <2>;
 					reg = <0x42>;
 					gpio-controller;
 					#gpio-cells = <2>;
@@ -578,6 +588,8 @@
 						imx477_6: sensor@1a {
 							compatible = "sony,imx477";
 							reg = <0x1a>;
+							/* CSI1 link C - VC 2 on this MIPI receiver */
+							csi-vc-id = <2>;
 							clocks = <&max96717_6>;
 							clock-names = "xclk";
 							enable-gpios = <&max96717_6 0 GPIO_ACTIVE_HIGH>;
@@ -601,6 +613,8 @@
 
 				max96717_7: serializer@42 {
 					compatible = "maxim,max96717", "maxim,max96717f";
+					/* CSI1 link D — VC 3 on this MIPI output */
+					maxim,vc-id = <3>;
 					reg = <0x42>;
 					gpio-controller;
 					#gpio-cells = <2>;
@@ -630,6 +644,8 @@
 						imx477_7: sensor@1a {
 							compatible = "sony,imx477";
 							reg = <0x1a>;
+							/* CSI1 link D - VC 3 on this MIPI receiver */
+							csi-vc-id = <3>;
 							clocks = <&max96717_7>;
 							clock-names = "xclk";
 							enable-gpios = <&max96717_7 0 GPIO_ACTIVE_HIGH>;
@@ -783,6 +799,8 @@
 
 				max96717_0: serializer@42 {
 					compatible = "maxim,max96717", "maxim,max96717f";
+					/* CSI0 link A — VC 0 on this MIPI output */
+					maxim,vc-id = <0>;
 					reg = <0x42>;
 					gpio-controller;
 					#gpio-cells = <2>;
@@ -812,6 +830,8 @@
 						imx477_0: sensor@1a {
 							compatible = "sony,imx477";
 							reg = <0x1a>;
+							/* CSI0 link A - VC 0 on this MIPI receiver */
+							csi-vc-id = <0>;
 							clocks = <&max96717_0>;
 							clock-names = "xclk";
 							enable-gpios = <&max96717_0 0 GPIO_ACTIVE_HIGH>;
@@ -835,6 +855,8 @@
 
 				max96717_1: serializer@42 {
 					compatible = "maxim,max96717", "maxim,max96717f";
+					/* CSI0 link B — VC 1 on this MIPI output */
+					maxim,vc-id = <1>;
 					reg = <0x42>;
 					gpio-controller;
 					#gpio-cells = <2>;
@@ -864,6 +886,8 @@
 						imx477_1: sensor@1a {
 							compatible = "sony,imx477";
 							reg = <0x1a>;
+							/* CSI0 link B - VC 1 on this MIPI receiver */
+							csi-vc-id = <1>;
 							clocks = <&max96717_1>;
 							clock-names = "xclk";
 							enable-gpios = <&max96717_1 0 GPIO_ACTIVE_HIGH>;
@@ -887,6 +911,8 @@
 
 				max96717_2: serializer@42 {
 					compatible = "maxim,max96717", "maxim,max96717f";
+					/* CSI0 link C — VC 2 on this MIPI output */
+					maxim,vc-id = <2>;
 					reg = <0x42>;
 					gpio-controller;
 					#gpio-cells = <2>;
@@ -916,6 +942,8 @@
 						imx477_2: sensor@1a {
 							compatible = "sony,imx477";
 							reg = <0x1a>;
+							/* CSI0 link C - VC 2 on this MIPI receiver */
+							csi-vc-id = <2>;
 							clocks = <&max96717_2>;
 							clock-names = "xclk";
 							enable-gpios = <&max96717_2 0 GPIO_ACTIVE_HIGH>;
@@ -939,6 +967,8 @@
 
 				max96717_3: serializer@42 {
 					compatible = "maxim,max96717", "maxim,max96717f";
+					/* CSI0 link D — VC 3 on this MIPI output */
+					maxim,vc-id = <3>;
 					reg = <0x42>;
 					gpio-controller;
 					#gpio-cells = <2>;
@@ -968,6 +998,8 @@
 						imx477_3: sensor@1a {
 							compatible = "sony,imx477";
 							reg = <0x1a>;
+							/* CSI0 link D - VC 3 on this MIPI receiver */
+							csi-vc-id = <3>;
 							clocks = <&max96717_3>;
 							clock-names = "xclk";
 							enable-gpios = <&max96717_3 0 GPIO_ACTIVE_HIGH>;

@@ -708,6 +708,32 @@ static int max96724_chip_init(struct max96724_priv *priv)
 
 
 	/*
+	 * Warm-reboot safety: the MAX96724 retains register state across a
+	 * kernel reset when the board power stays up. Writing our config on
+	 * top of stale state has been observed to fail GMSL lock until a cold
+	 * power cycle. Issue RESET_ALL up front so every probe starts from
+	 * datasheet defaults, matching what a power cycle would give us.
+	 * RESET_ALL self-clears; the chip needs a short settle before it will
+	 * ACK i2c reliably again.
+	 */
+	dev_info(dev, "chip_init: issuing RESET_ALL for clean-state probe\n");
+	regmap_write(priv->rmap, MAX96724_TOP_CTRL_PWR1, RESET_ALL);
+	msleep(100);
+
+	/*
+	 * RESET_ALL only clears the deserializer; the MAX96717 serializers and
+	 * any downstream sensor(s) keep their register state because PoC stays
+	 * up across a warm reboot. Issue RESET_LINK on every link — this
+	 * propagates a reset command over GMSL to the remote serializer,
+	 * forcing the far-end chain to reinitialize too. Without this, warm
+	 * reboots fail to lock GMSL until a full cold power cycle.
+	 */
+	dev_info(dev, "chip_init: issuing RESET_LINK on all links to reset serializers\n");
+	regmap_write(priv->rmap, MAX96724_TOP_CTRL_CTRL1,
+		     RESET_LINK_A | RESET_LINK_B | RESET_LINK_C | RESET_LINK_D);
+	msleep(100);
+
+	/*
 	 * Per MAX96724FR User Guide: configure pixel/tunnel mode BEFORE link
 	 * initialization. Enable tunnel mode manually on all 4 pipes and
 	 * disable auto-detect; without DIS_AUTO_TUN_DET=1 the auto-detect
@@ -746,40 +772,102 @@ static int max96724_chip_init(struct max96724_priv *priv)
 		     RESET_ONESHOT_C | RESET_ONESHOT_D);
 	msleep(100);
 
-	/* Set GMSL link speed from DT before checking for lock */
-	if (priv->gmsl_speed) {
-		dev_info(dev, "Setting GMSL link speed to %s\n",
-			 priv->gmsl_speed == MAX96724_GMSL_3G ? "3Gbps" : "6Gbps");
-		max96724_gmsl_speed_set(priv, priv->gmsl_speed);
-		/* One-shot reset all links to renegotiate at new speed */
-		regmap_write(priv->rmap, MAX96724_TOP_CTRL_CTRL1,
-			     RESET_ONESHOT_A | RESET_ONESHOT_B |
-			     RESET_ONESHOT_C | RESET_ONESHOT_D);
-		msleep(100);
-	}
+	/*
+	 * Lock-attempt loop: try the DT-configured GMSL speed first; if no
+	 * link locks after 3 retries, switch to the other speed (3<->6 Gbps)
+	 * and retry. If neither speed produces a lock, abort.
+	 *
+	 * If the DT didn't specify a speed, we do a single attempt at
+	 * whatever the chip defaults to — no speed to swap with.
+	 */
+	{
+		enum max96724_gmsl_speed speeds[2];
+		unsigned int n_speeds = 0;
+		unsigned int attempt;
 
-	while (retries--) {
-		locked_links = max96724_check_gmsl_links(priv);
-		if (locked_links == priv->gmsl_link_mask)
-			break;
-		if (locked_links != 0)
-			break;
-
-		regmap_write(priv->rmap, MAX96724_TOP_CTRL_PWR1, RESET_ALL);
-		usleep_range(2000, 2500);
-
-		/* RESET_ALL reverts speed to default, re-apply */
 		if (priv->gmsl_speed) {
-			max96724_gmsl_speed_set(priv, priv->gmsl_speed);
-			regmap_write(priv->rmap, MAX96724_TOP_CTRL_CTRL1,
-				     RESET_ONESHOT_A | RESET_ONESHOT_B |
-				     RESET_ONESHOT_C | RESET_ONESHOT_D);
-			msleep(100);
+			speeds[0] = priv->gmsl_speed;
+			speeds[1] = (priv->gmsl_speed == MAX96724_GMSL_3G)
+				    ? MAX96724_GMSL_6G : MAX96724_GMSL_3G;
+			n_speeds = 2;
+		} else {
+			/* Placeholder so the loop runs once; try_speed is unused. */
+			speeds[0] = 0;
+			n_speeds = 1;
+		}
+
+		locked_links = 0;
+
+		for (attempt = 0; attempt < n_speeds; attempt++) {
+			enum max96724_gmsl_speed try_speed = speeds[attempt];
+
+			if (try_speed) {
+				if (attempt == 0) {
+					dev_info(dev,
+						 "Setting GMSL link speed to %s\n",
+						 try_speed == MAX96724_GMSL_3G
+						 ? "3Gbps" : "6Gbps");
+				} else {
+					dev_warn(dev,
+						 "GMSL did not lock at %s; trying %s\n",
+						 speeds[0] == MAX96724_GMSL_3G
+						 ? "3Gbps" : "6Gbps",
+						 try_speed == MAX96724_GMSL_3G
+						 ? "3Gbps" : "6Gbps");
+				}
+				max96724_gmsl_speed_set(priv, try_speed);
+				regmap_write(priv->rmap, MAX96724_TOP_CTRL_CTRL1,
+					     RESET_ONESHOT_A | RESET_ONESHOT_B |
+					     RESET_ONESHOT_C | RESET_ONESHOT_D);
+				msleep(100);
+			}
+
+			retries = 3;
+			while (retries--) {
+				locked_links = max96724_check_gmsl_links(priv);
+				if (locked_links == priv->gmsl_link_mask)
+					break;
+				if (locked_links != 0)
+					break;
+
+				regmap_write(priv->rmap,
+					     MAX96724_TOP_CTRL_PWR1, RESET_ALL);
+				usleep_range(2000, 2500);
+
+				/* RESET_ALL reverts speed to default, re-apply */
+				if (try_speed) {
+					max96724_gmsl_speed_set(priv, try_speed);
+					regmap_write(priv->rmap,
+						     MAX96724_TOP_CTRL_CTRL1,
+						     RESET_ONESHOT_A | RESET_ONESHOT_B |
+						     RESET_ONESHOT_C | RESET_ONESHOT_D);
+					msleep(100);
+				}
+			}
+
+			if (locked_links != 0) {
+				/*
+				 * Record the speed that actually locked so the
+				 * rest of the driver (and userspace via sysfs/
+				 * dmesg) reflects the real link rate, not the
+				 * DT-requested one.
+				 */
+				if (try_speed && try_speed != priv->gmsl_speed) {
+					dev_warn(dev,
+						 "GMSL locked at fallback speed %s (DT requested %s)\n",
+						 try_speed == MAX96724_GMSL_3G
+						 ? "3Gbps" : "6Gbps",
+						 priv->gmsl_speed == MAX96724_GMSL_3G
+						 ? "3Gbps" : "6Gbps");
+					priv->gmsl_speed = try_speed;
+				}
+				break;
+			}
 		}
 	}
 
 	if (locked_links == 0) {
-		dev_err(dev, "No GMSL link has locked after 3 retries. Abort!\n");
+		dev_err(dev, "No GMSL link locked at either speed. Abort!\n");
 		return -ENODEV;
 	}
 
@@ -848,6 +936,53 @@ static int max96724_vc_mapping_en(struct max96724_priv *priv, int pipe, u16 mapp
 		return -EIO;
 	}
 	return 0;
+}
+
+/*
+ * Force the outgoing MIPI virtual channel for the given pipe via the
+ * MAX96724's per-pipe SOFT_VC override (BACKTOP0 SOFT_VC_<pipe> + BACKTOP1
+ * OVERRIDE_VC_<pipe>). Required for multi-camera streaming because the
+ * deserializer is in GMSL tunnel mode — the VC/DT mapper is bypassed, so
+ * we can't remap with the mapper. SOFT_VC_<pipe> stamps the chosen VC
+ * onto each pipe's data on its way out to the MIPI TX, regardless of
+ * what the upstream serializer sent. Per MAX96724FR user guide section
+ * "Software Override".
+ */
+static int max96724_pipe_vc_override(struct max96724_priv *priv, int pipe, u8 vc)
+{
+	int ret = 0;
+
+	switch (pipe) {
+	case 0:
+		ret |= regmap_update_bits(priv->rmap, MAX96724_BACKTOP0_13,
+					  SOFT_VC_0_MASK,
+					  (vc << SOFT_VC_0_SHIFT) & SOFT_VC_0_MASK);
+		break;
+	case 1:
+		ret |= regmap_update_bits(priv->rmap, MAX96724_BACKTOP0_13,
+					  SOFT_VC_1_MASK,
+					  (vc << SOFT_VC_1_SHIFT) & SOFT_VC_1_MASK);
+		break;
+	case 2:
+		ret |= regmap_update_bits(priv->rmap, MAX96724_BACKTOP0_14,
+					  SOFT_VC_2_MASK,
+					  (vc << SOFT_VC_2_SHIFT) & SOFT_VC_2_MASK);
+		break;
+	case 3:
+		ret |= regmap_update_bits(priv->rmap, MAX96724_BACKTOP0_14,
+					  SOFT_VC_3_MASK,
+					  (vc << SOFT_VC_3_SHIFT) & SOFT_VC_3_MASK);
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	/* OVERRIDE_VC_<pipe> sits at BIT(4 + pipe) of 0x0456. */
+	ret |= regmap_update_bits(priv->rmap,
+				  MAX96724_BACKTOP1_OVERRIDE_BPP_DT,
+				  BIT(4 + pipe), BIT(4 + pipe));
+
+	return ret ? -EIO : 0;
 }
 
 /* Each VC src/dst map with a set bit in mapping_mask will be routed to dphy_no. */
@@ -983,6 +1118,15 @@ static int max96724_pipe_setup(struct max96724_priv *priv, int pipe,
 
 	/* Tunnel mode (TUN_EN, TUN_DEST, DIS_AUTO_TUN_DET) is set in chip_init
 	 * before link initialization, per the MAX96724FR user guide. */
+
+	/*
+	 * Stamp pipe index as outgoing VC. With one pipe per GMSL link
+	 * (link N -> pipe N) and tunnel mode bypassing the VC/DT mapper,
+	 * this is the only way to give each camera a distinct MIPI VC at
+	 * the deserializer's MIPI TX. The downstream CSI receiver uses
+	 * the VC field to route each stream to its own ISI pipe.
+	 */
+	ret |= max96724_pipe_vc_override(priv, pipe, pipe);
 
 	ret |= max96724_assign_pipe_to_mipi_ctrl(priv, pipe);
 
@@ -1831,12 +1975,17 @@ error:
 
 static void max96724_v4l2_deinit(struct max96724_priv *priv)
 {
-
+	/*
+	 * Pair of v4l2_subdev_init_finalize() in init — releases the active
+	 * state allocated for the streams-aware subdev (V4L2_SUBDEV_FL_STREAMS).
+	 * Missing this call made `echo <dev> > .../unbind` kernel-panic because
+	 * the state outlives the subdev free. Order matches max9286.c.
+	 */
+	v4l2_subdev_cleanup(&priv->sd);
+	v4l2_ctrl_handler_free(&priv->ctrl_handler);
 	v4l2_async_unregister_subdev(&priv->sd);
 	max96724_v4l2_notifier_unregister(priv);
 	media_entity_cleanup(&priv->sd.entity);
-	v4l2_ctrl_handler_free(&priv->ctrl_handler);
-
 }
 
 static int max96724_probe(struct i2c_client *client)
