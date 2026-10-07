@@ -137,12 +137,16 @@
 			      <&gpio_expander_20 2 GPIO_ACTIVE_HIGH>,
 			      <&gpio_expander_20 1 GPIO_ACTIVE_HIGH>,
 			      <&gpio_expander_20 0 GPIO_ACTIVE_HIGH>;
-		recovery-gpios = <&gpio_expander_21 0 GPIO_ACTIVE_HIGH>,
-				 <&gpio_expander_21 1 GPIO_ACTIVE_HIGH>,
-				 <&gpio_expander_21 2 GPIO_ACTIVE_HIGH>,
-				 <&gpio_expander_21 3 GPIO_ACTIVE_HIGH>,
-				 <&gpio_expander_21 4 GPIO_ACTIVE_HIGH>,
-				 <&gpio_expander_21 5 GPIO_ACTIVE_HIGH>;
+		/* Recovery pins drive the Orins' FORCE_RECOVERY* strap: the module enters
+		 * USB recovery (APX) if the pin is low at power-on. Active-low keeps
+		 * recovery=0 (and the probe default) meaning "boot normally".
+		 */
+		recovery-gpios = <&gpio_expander_21 0 GPIO_ACTIVE_LOW>,
+				 <&gpio_expander_21 1 GPIO_ACTIVE_LOW>,
+				 <&gpio_expander_21 2 GPIO_ACTIVE_LOW>,
+				 <&gpio_expander_21 3 GPIO_ACTIVE_LOW>,
+				 <&gpio_expander_21 4 GPIO_ACTIVE_LOW>,
+				 <&gpio_expander_21 5 GPIO_ACTIVE_LOW>;
 	};
 
 	tcb-power-monitor {
