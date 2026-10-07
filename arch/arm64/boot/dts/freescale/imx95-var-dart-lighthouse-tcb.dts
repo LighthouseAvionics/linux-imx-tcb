@@ -156,35 +156,39 @@
 		compatible = "gpio-leds";
 
 		led-1 {
-			gpios = <&gpio_expander_20 8 GPIO_ACTIVE_LOW>;
+			gpios = <&gpio_expander_20 8 GPIO_ACTIVE_HIGH>;
 			default-state = "off";
 		};
 		led-2 {
-			gpios = <&gpio_expander_20 9 GPIO_ACTIVE_LOW>;
+			gpios = <&gpio_expander_20 9 GPIO_ACTIVE_HIGH>;
 			default-state = "off";
 		};
 		system-error {
-			gpios = <&gpio_expander_21 12 GPIO_ACTIVE_LOW>;
+			gpios = <&gpio_expander_21 12 GPIO_ACTIVE_HIGH>;
 			default-state = "off";
 		};
 		network-status {
-			gpios = <&gpio_expander_21 13 GPIO_ACTIVE_LOW>;
+			gpios = <&gpio_expander_21 13 GPIO_ACTIVE_HIGH>;
 			default-state = "off";
 		};
 		stm32-error {
-			gpios = <&gpio_expander_21 14 GPIO_ACTIVE_LOW>;
+			gpios = <&gpio_expander_21 14 GPIO_ACTIVE_HIGH>;
 			default-state = "off";
 		};
 		som-error {
-			gpios = <&gpio_expander_21 15 GPIO_ACTIVE_LOW>;
+			gpios = <&gpio_expander_21 15 GPIO_ACTIVE_HIGH>;
 			default-state = "off";
 		};
 	};
 
 	tcb-relays {
 		compatible = "lha,tcb-relays";
-		ptz-gpios    = <&gpio_expander_21 8  GPIO_ACTIVE_LOW>;
-		heater-gpios = <&gpio_expander_21 9  GPIO_ACTIVE_LOW>;
+		ptz-gpios    = <&gpio_expander_21 8  GPIO_ACTIVE_HIGH>;
+		heater-gpios = <&gpio_expander_21 9  GPIO_ACTIVE_HIGH>;
+		/* Network switch: supply is on the relay NC contact, so 48V is on
+		 * while the pin is low (fail-safe on). Active-low keeps v48_power=1
+		 * meaning "on".
+		 */
 		v48-gpios    = <&gpio_expander_21 10 GPIO_ACTIVE_LOW>;
 		v48-default-on;
 	};
