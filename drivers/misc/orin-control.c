@@ -44,7 +44,7 @@ static ssize_t orin_power_show(struct device *dev,
 	if (idx < 0 || idx >= NUM_ORINS)
 		return -EINVAL;
 
-	return sysfs_emit(buf, "%d\n", gpiod_get_value(oc->power[idx]));
+	return sysfs_emit(buf, "%d\n", gpiod_get_value_cansleep(oc->power[idx]));
 }
 
 static ssize_t orin_power_store(struct device *dev,
@@ -60,7 +60,7 @@ static ssize_t orin_power_store(struct device *dev,
 	if (kstrtouint(buf, 10, &val))
 		return -EINVAL;
 
-	gpiod_set_value(oc->power[idx], !!val);
+	gpiod_set_value_cansleep(oc->power[idx], !!val);
 	return count;
 }
 
@@ -79,7 +79,7 @@ static ssize_t orin_recovery_store(struct device *dev,
 	if (kstrtouint(buf, 10, &val))
 		return -EINVAL;
 
-	gpiod_set_value(oc->recovery[idx], !!val);
+	gpiod_set_value_cansleep(oc->recovery[idx], !!val);
 	return count;
 }
 
@@ -95,11 +95,11 @@ static ssize_t orin_state_show(struct device *dev,
 	if (idx < 0 || idx >= NUM_ORINS)
 		return -EINVAL;
 
-	pwr = gpiod_get_value(oc->power[idx]);
+	pwr = gpiod_get_value_cansleep(oc->power[idx]);
 
 	if (idx < NUM_RECOVERY)
 		return sysfs_emit(buf, "power=%d recovery=%d\n",
-				  pwr, gpiod_get_value(oc->recovery[idx]));
+				  pwr, gpiod_get_value_cansleep(oc->recovery[idx]));
 
 	return sysfs_emit(buf, "power=%d recovery=n/a\n", pwr);
 }
