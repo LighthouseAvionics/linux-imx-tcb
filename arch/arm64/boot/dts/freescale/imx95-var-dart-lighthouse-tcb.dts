@@ -137,12 +137,15 @@
 			      <&gpio_expander_20 2 GPIO_ACTIVE_HIGH>,
 			      <&gpio_expander_20 1 GPIO_ACTIVE_HIGH>,
 			      <&gpio_expander_20 0 GPIO_ACTIVE_HIGH>;
-		recovery-gpios = <&gpio_expander_21 0 GPIO_ACTIVE_HIGH>,
-				 <&gpio_expander_21 1 GPIO_ACTIVE_HIGH>,
-				 <&gpio_expander_21 2 GPIO_ACTIVE_HIGH>,
-				 <&gpio_expander_21 3 GPIO_ACTIVE_HIGH>,
-				 <&gpio_expander_21 4 GPIO_ACTIVE_HIGH>,
-				 <&gpio_expander_21 5 GPIO_ACTIVE_HIGH>;
+		/* Each recovery GPIO sinks the LED of an LTV-247 opto (anode to 3V3
+		 * via 330R); pulling it low holds the Orin's RECOVERY pin to ground.
+		 */
+		recovery-gpios = <&gpio_expander_21 0 GPIO_ACTIVE_LOW>,
+				 <&gpio_expander_21 1 GPIO_ACTIVE_LOW>,
+				 <&gpio_expander_21 2 GPIO_ACTIVE_LOW>,
+				 <&gpio_expander_21 3 GPIO_ACTIVE_LOW>,
+				 <&gpio_expander_21 4 GPIO_ACTIVE_LOW>,
+				 <&gpio_expander_21 5 GPIO_ACTIVE_LOW>;
 	};
 
 	tcb-power-monitor {
@@ -156,27 +159,27 @@
 		compatible = "gpio-leds";
 
 		led-1 {
-			gpios = <&gpio_expander_20 8 GPIO_ACTIVE_HIGH>;
+			gpios = <&gpio_expander_20 8 GPIO_ACTIVE_LOW>;
 			default-state = "off";
 		};
 		led-2 {
-			gpios = <&gpio_expander_20 9 GPIO_ACTIVE_HIGH>;
+			gpios = <&gpio_expander_20 9 GPIO_ACTIVE_LOW>;
 			default-state = "off";
 		};
 		system-error {
-			gpios = <&gpio_expander_21 12 GPIO_ACTIVE_HIGH>;
+			gpios = <&gpio_expander_21 12 GPIO_ACTIVE_LOW>;
 			default-state = "off";
 		};
 		network-status {
-			gpios = <&gpio_expander_21 13 GPIO_ACTIVE_HIGH>;
+			gpios = <&gpio_expander_21 13 GPIO_ACTIVE_LOW>;
 			default-state = "off";
 		};
 		stm32-error {
-			gpios = <&gpio_expander_21 14 GPIO_ACTIVE_HIGH>;
+			gpios = <&gpio_expander_21 14 GPIO_ACTIVE_LOW>;
 			default-state = "off";
 		};
 		som-error {
-			gpios = <&gpio_expander_21 15 GPIO_ACTIVE_HIGH>;
+			gpios = <&gpio_expander_21 15 GPIO_ACTIVE_LOW>;
 			default-state = "off";
 		};
 	};
