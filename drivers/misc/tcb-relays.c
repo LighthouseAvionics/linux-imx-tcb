@@ -53,7 +53,7 @@ static ssize_t relay_show(struct device *dev,
 	if (idx < 0)
 		return idx;
 
-	return sysfs_emit(buf, "%d\n", gpiod_get_value(ctx->gpio[idx]));
+	return sysfs_emit(buf, "%d\n", gpiod_get_value_cansleep(ctx->gpio[idx]));
 }
 
 static ssize_t relay_store(struct device *dev,
@@ -69,7 +69,7 @@ static ssize_t relay_store(struct device *dev,
 	if (kstrtouint(buf, 10, &val))
 		return -EINVAL;
 
-	gpiod_set_value(ctx->gpio[idx], !!val);
+	gpiod_set_value_cansleep(ctx->gpio[idx], !!val);
 	return count;
 }
 
